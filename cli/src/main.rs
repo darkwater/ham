@@ -161,6 +161,20 @@ struct FailureOutput {
 }
 
 #[derive(Serialize)]
+struct CommandSuccessOutput {
+    ok: bool,
+    command: &'static str,
+    result: Value,
+}
+
+#[derive(Serialize)]
+struct CommandFailureOutput {
+    ok: bool,
+    command: &'static str,
+    error: ErrorOutput,
+}
+
+#[derive(Serialize)]
 struct UnsupportedCommandOutput {
     ok: bool,
     error: UnsupportedCommandErrorOutput,
@@ -201,15 +215,27 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
                 1
             }
         },
-        CliCommand::Category { category } => {
-            render_error(
-                mode,
-                CliError::UnsupportedCommand {
-                    command: category_command_label(&category),
-                },
-            );
-            2
-        }
+        CliCommand::Category { category } => match category {
+            CategoryCommand::Create(args) => match run_category_create(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "category create", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "category create", err);
+                    1
+                }
+            },
+            unsupported => {
+                render_error(
+                    mode,
+                    CliError::UnsupportedCommand {
+                        command: category_command_label(&unsupported),
+                    },
+                );
+                2
+            }
+        },
         CliCommand::Asset { asset } => {
             render_error(
                 mode,
@@ -220,6 +246,22 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
             2
         }
     }
+}
+
+fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let result = post(
+        &agent,
+        base_url,
+        "category_create",
+        "/categories",
+        json!({"name":args.name,"parent_id":args.parent_id}),
+    )?;
+
+    Ok(result.response)
 }
 
 fn category_command_label(command: &CategoryCommand) -> &'static str {
@@ -524,6 +566,71 @@ fn render_error(mode: OutputMode, err: CliError) {
         OutputMode::Human => eprintln!(
             "ERROR code={} step={} status={:?} message={}",
             body.error.code, body.error.step, body.error.status_code, body.error.message
+        ),
+    }
+}
+
+fn render_command_success(mode: OutputMode, command: &'static str, result: Value) {
+    match mode {
+        OutputMode::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&CommandSuccessOutput {
+                ok: true,
+                command,
+                result,
+            })
+            .unwrap()
+        ),
+        OutputMode::Human => println!("DONE command={} keys={}", command, top_level_keys(&result)),
+    }
+}
+
+fn render_command_error(mode: OutputMode, command: &'static str, err: CliError) {
+    let error = match err {
+        CliError::Http {
+            step,
+            status_code,
+            message,
+        } => ErrorOutput {
+            code: "HTTP_ERROR",
+            step,
+            status_code,
+            message,
+        },
+        CliError::MissingField { step, field } => ErrorOutput {
+            code: "INVALID_RESPONSE",
+            step,
+            status_code: None,
+            message: format!("missing required field `{field}`"),
+        },
+        CliError::UnsupportedCommand { command } => {
+            match mode {
+                OutputMode::Json => {
+                    println!("{}", format_unsupported_command_json(command));
+                }
+                OutputMode::Human => {
+                    eprintln!("{}", format_unsupported_command_human(command));
+                }
+            }
+            return;
+        }
+    };
+
+    let body = CommandFailureOutput {
+        ok: false,
+        command,
+        error,
+    };
+
+    match mode {
+        OutputMode::Json => println!("{}", serde_json::to_string_pretty(&body).unwrap()),
+        OutputMode::Human => eprintln!(
+            "ERROR command={} code={} step={} status={:?} message={}",
+            body.command,
+            body.error.code,
+            body.error.step,
+            body.error.status_code,
+            body.error.message
         ),
     }
 }

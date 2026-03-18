@@ -103,6 +103,32 @@ async fn scripted_core_flow_surfaces_stable_error_shape() {
 }
 
 #[tokio::test]
+async fn category_create_http_error_uses_command_error_envelope() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "invalid",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["ok"], false);
+    assert_eq!(body["command"], "category create");
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "category_create");
+    assert_eq!(body["error"]["status_code"], 400);
+}
+
+#[tokio::test]
 async fn scripted_core_flow_succeeds_against_real_server_app() {
     let db_file = tempfile::NamedTempFile::new().unwrap();
     let app = server::app::build_app(db_file.path().to_path_buf()).unwrap();
