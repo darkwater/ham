@@ -13,7 +13,7 @@ async fn assets_search_defaults_to_stable_asset_tag_sort_with_cursor() {
     let db_path = temp.path().join("search-http.db");
     let conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    seed_category(&conn, 1, "network", "Network", None);
+    seed_category(&conn, 1, "Network", None);
     seed_asset(&conn, 1, 1, "AST-200", Some("Core"));
     seed_asset(&conn, 2, 1, "AST-100", Some("Edge"));
     seed_asset(&conn, 3, 1, "AST-300", Some("Spare"));
@@ -58,9 +58,9 @@ async fn assets_search_supports_and_filters_or_groups_and_category_subtree_with_
     let db_path = temp.path().join("search-http.db");
     let conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    seed_category(&conn, 1, "root", "Root", None);
-    seed_category(&conn, 2, "network", "Network", Some(1));
-    seed_category(&conn, 3, "other", "Other", None);
+    seed_category(&conn, 1, "Root", None);
+    seed_category(&conn, 2, "Network", Some(1));
+    seed_category(&conn, 3, "Other", None);
 
     seed_asset(&conn, 10, 2, "AST-NET-001", Some("Edge router"));
     seed_asset(&conn, 11, 2, "AST-NET-002", Some("Access switch"));
@@ -118,7 +118,7 @@ async fn assets_search_supports_type_specific_operators_and_null_semantics() {
     let db_path = temp.path().join("search-http.db");
     let conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    seed_category(&conn, 1, "network", "Network", None);
+    seed_category(&conn, 1, "Network", None);
     seed_asset(&conn, 100, 1, "AST-TYP-001", Some("Firewall"));
     seed_asset(&conn, 101, 1, "AST-TYP-002", Some("Switch"));
 
@@ -210,7 +210,7 @@ async fn assets_search_numeric_tag_sort_is_numeric_not_lexicographic() {
     let db_path = temp.path().join("search-http.db");
     let conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    seed_category(&conn, 1, "network", "Network", None);
+    seed_category(&conn, 1, "Network", None);
     seed_asset(&conn, 201, 1, "AST-SORT-201", Some("A"));
     seed_asset(&conn, 202, 1, "AST-SORT-202", Some("B"));
     seed_asset(&conn, 203, 1, "AST-SORT-203", Some("C"));
@@ -252,7 +252,7 @@ async fn assets_search_returns_400_for_invalid_contract_inputs() {
     let db_path = temp.path().join("search-http.db");
     let conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    seed_category(&conn, 1, "network", "Network", None);
+    seed_category(&conn, 1, "Network", None);
     seed_asset(&conn, 301, 1, "AST-ERR-301", Some("Err"));
     seed_tag_definition(&conn, 31, "is_critical", "Critical", "boolean", None);
     seed_tag_value(&conn, 301, 31, "true", None, None);
@@ -331,7 +331,7 @@ async fn assets_search_includes_event_applied_enum_and_external_entity_values() 
     let db_path = temp.path().join("search-http.db");
     let conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    seed_category(&conn, 1, "network", "Network", None);
+    seed_category(&conn, 1, "Network", None);
     seed_asset(&conn, 401, 1, "AST-EVT-401", Some("Router"));
     seed_asset(&conn, 402, 1, "AST-EVT-402", Some("Switch"));
 
@@ -433,16 +433,10 @@ async fn read_json(body: Body) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-fn seed_category(
-    conn: &Connection,
-    id: i64,
-    slug: &str,
-    name: &str,
-    parent_category_id: Option<i64>,
-) {
+fn seed_category(conn: &Connection, id: i64, name: &str, parent_category_id: Option<i64>) {
     conn.execute(
-        "INSERT INTO categories (id, slug, name, parent_category_id) VALUES (?1, ?2, ?3, ?4)",
-        params![id, slug, name, parent_category_id],
+        "INSERT INTO categories (id, name, parent_category_id) VALUES (?1, ?2, ?3)",
+        params![id, name, parent_category_id],
     )
     .unwrap();
 }

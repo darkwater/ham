@@ -116,7 +116,7 @@ fn run_scripted_core_flow(base_url: &str) -> Result<Vec<StepResult>, CliError> {
         base_url,
         "create_category",
         "/categories",
-        json!({"slug":"network","name":"Network"}),
+        json!({"name":"Network"}),
     )?);
 
     steps.push(post(

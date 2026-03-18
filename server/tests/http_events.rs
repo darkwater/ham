@@ -96,7 +96,7 @@ async fn referenced_event_type_version_cannot_be_deleted() {
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
     seed_tag_definition(&conn, 1, "owner", "Owner", "text");
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-001");
 
     let app = server::app::build_app(db_path.clone()).unwrap();
@@ -245,7 +245,7 @@ async fn create_asset_event_enforces_idempotency_key_and_timestamp_rules() {
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
     seed_tag_definition(&conn, 1, "owner", "Owner", "text");
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-002");
 
     let app = server::app::build_app(db_path).unwrap();
@@ -320,7 +320,7 @@ async fn create_asset_event_supports_idempotent_replay_and_payload_mismatch_conf
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
     seed_tag_definition(&conn, 1, "owner", "Owner", "text");
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-003");
 
     let app = server::app::build_app(db_path).unwrap();
@@ -584,7 +584,7 @@ async fn apply_event_fails_when_event_type_contains_unknown_operation() {
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
     seed_tag_definition(&conn, 1, "owner", "Owner", "text");
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-UNKNOWN-OP");
     conn.execute(
         "INSERT INTO event_types (event_type_id, display_name, current_version) VALUES (?1, ?2, ?3)",
@@ -649,7 +649,7 @@ async fn create_asset_event_persists_enum_and_external_entity_foreign_keys() {
         (31_i64, 10_i64, "v-31", "Vendor 31"),
     )
     .unwrap();
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-006");
 
     let app = server::app::build_app(db_path.clone()).unwrap();
@@ -762,7 +762,7 @@ async fn create_asset_event_rejects_invalid_enum_or_external_entity_reference() 
         (31_i64, 11_i64, "s-31", "Site 31"),
     )
     .unwrap();
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-007");
 
     let app = server::app::build_app(db_path.clone()).unwrap();
@@ -859,7 +859,7 @@ async fn create_asset_event_applies_projection_atomically() {
     let conn = server::db::open_and_prepare(&db_path).unwrap();
     seed_tag_definition(&conn, 1, "owner", "Owner", "text");
     seed_tag_definition(&conn, 2, "count", "Count", "integer");
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-004");
 
     let app = server::app::build_app(db_path.clone()).unwrap();
@@ -959,7 +959,7 @@ async fn list_asset_events_uses_desc_order_and_stable_cursor() {
     let db_path = temp.path().join("events-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     seed_asset(&conn, 1, 1, "AST-EVENT-005");
     conn.execute(
         "INSERT INTO event_types (event_type_id, display_name, current_version) VALUES (?1, ?2, ?3)",
@@ -1051,7 +1051,7 @@ async fn deleted_asset_timeline_returns_not_found() {
     let db_path = temp.path().join("events-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    seed_category(&conn, 1, "network", "Network");
+    seed_category(&conn, 1, "Network");
     conn.execute(
         "INSERT INTO assets (id, category_id, asset_tag, deleted_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)",
         (1_i64, 1_i64, "AST-EVENT-DELETED"),
@@ -1074,10 +1074,10 @@ async fn read_json(body: Body) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-fn seed_category(conn: &Connection, id: i64, slug: &str, name: &str) {
+fn seed_category(conn: &Connection, id: i64, name: &str) {
     conn.execute(
-        "INSERT INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (id, slug, name),
+        "INSERT INTO categories (id, name) VALUES (?1, ?2)",
+        (id, name),
     )
     .unwrap();
 }

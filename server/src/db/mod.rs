@@ -20,6 +20,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0003_http_lifecycle_columns.sql",
         include_str!("../../migrations/0003_http_lifecycle_columns.sql"),
     ),
+    (
+        "0004_remove_category_slug.sql",
+        include_str!("../../migrations/0004_remove_category_slug.sql"),
+    ),
 ];
 
 fn expected_schema_version() -> i32 {
@@ -55,11 +59,20 @@ pub fn open_and_prepare(path: &Path) -> Result<Connection, DbError> {
 }
 
 fn apply_migrations(conn: &Connection, from_version: i32) -> Result<(), DbError> {
-    for (idx, (_name, sql)) in MIGRATIONS.iter().enumerate() {
+    for (idx, (name, sql)) in MIGRATIONS.iter().enumerate() {
         let target_version = (idx as i32) + 1;
         if target_version <= from_version {
             continue;
         }
+
+        if *name == "0004_remove_category_slug.sql" {
+            conn.pragma_update(None, "foreign_keys", "OFF")?;
+            conn.execute_batch(sql)?;
+            conn.pragma_update(None, "user_version", target_version.to_string())?;
+            conn.pragma_update(None, "foreign_keys", "ON")?;
+            continue;
+        }
+
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", target_version.to_string())?;

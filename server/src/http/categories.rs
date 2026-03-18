@@ -18,7 +18,6 @@ pub fn routes() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct CreateCategoryRequest {
-    slug: String,
     name: String,
     #[serde(default)]
     parent_category_id: Option<i64>,
@@ -27,7 +26,6 @@ struct CreateCategoryRequest {
 #[derive(Serialize)]
 struct CategoryResponse {
     id: i64,
-    slug: String,
     name: String,
     parent_category_id: Option<i64>,
 }
@@ -53,8 +51,8 @@ async fn create_category(
     };
 
     let inserted = conn.execute(
-        "INSERT INTO categories (slug, name, parent_category_id) VALUES (?1, ?2, ?3)",
-        rusqlite::params![req.slug, req.name, req.parent_category_id],
+        "INSERT INTO categories (name, parent_category_id) VALUES (?1, ?2)",
+        rusqlite::params![req.name, req.parent_category_id],
     );
 
     if let Err(err) = inserted {
@@ -78,7 +76,6 @@ async fn create_category(
         StatusCode::CREATED,
         Json(CategoryResponse {
             id,
-            slug: req.slug,
             name: req.name,
             parent_category_id: req.parent_category_id,
         }),
@@ -92,9 +89,9 @@ async fn list_categories(State(state): State<AppState>) -> impl IntoResponse {
         Err(err) => return internal_error(err.to_string()),
     };
 
-    let mut stmt = match conn.prepare(
-        "SELECT id, slug, name, parent_category_id FROM categories ORDER BY slug ASC, id ASC",
-    ) {
+    let mut stmt = match conn
+        .prepare("SELECT id, name, parent_category_id FROM categories ORDER BY name ASC, id ASC")
+    {
         Ok(stmt) => stmt,
         Err(err) => return internal_error(err.to_string()),
     };
@@ -102,9 +99,8 @@ async fn list_categories(State(state): State<AppState>) -> impl IntoResponse {
     let rows = match stmt.query_map([], |row| {
         Ok(CategoryResponse {
             id: row.get(0)?,
-            slug: row.get(1)?,
-            name: row.get(2)?,
-            parent_category_id: row.get(3)?,
+            name: row.get(1)?,
+            parent_category_id: row.get(2)?,
         })
     }) {
         Ok(rows) => rows,

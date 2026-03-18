@@ -215,7 +215,7 @@ async fn create_category(
     State(state): State<Arc<Mutex<SharedState>>>,
     Json(payload): Json<Value>,
 ) -> (StatusCode, Json<Value>) {
-    if payload.get("slug").and_then(Value::as_str) != Some("network") {
+    if payload.get("name").and_then(Value::as_str) != Some("Network") {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
@@ -224,7 +224,7 @@ async fn create_category(
     let category_id = state.lock().unwrap().config.unwrap().category_id;
     (
         StatusCode::CREATED,
-        Json(json!({"id":category_id,"slug":"network","name":"Network"})),
+        Json(json!({"id":category_id,"name":"Network"})),
     )
 }
 

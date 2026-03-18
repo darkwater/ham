@@ -13,8 +13,8 @@ async fn category_delete_blocked_by_child_categories() {
     let db_path = temp.path().join("categories-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "root", "Root", None);
-    insert_category(&conn, 2, "child", "Child", Some(1));
+    insert_category(&conn, 1, "Root", None);
+    insert_category(&conn, 2, "Child", Some(1));
 
     let app = server::app::build_app(db_path).unwrap();
     let req = Request::builder()
@@ -35,9 +35,9 @@ async fn categories_list_returns_deterministic_ordering_and_expected_fields() {
     let db_path = temp.path().join("categories-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "b-root", "Root", None);
-    insert_category(&conn, 2, "a-child", "Child", Some(1));
-    insert_category(&conn, 3, "z-leaf", "Leaf", Some(1));
+    insert_category(&conn, 1, "Root", None);
+    insert_category(&conn, 2, "Child", Some(1));
+    insert_category(&conn, 3, "Leaf", Some(1));
 
     let app = server::app::build_app(db_path).unwrap();
     let req = Request::builder()
@@ -53,19 +53,53 @@ async fn categories_list_returns_deterministic_ordering_and_expected_fields() {
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 3);
     assert_eq!(items[0]["id"], 2);
-    assert_eq!(items[0]["slug"], "a-child");
     assert_eq!(items[0]["name"], "Child");
     assert_eq!(items[0]["parent_category_id"], 1);
 
-    assert_eq!(items[1]["id"], 1);
-    assert_eq!(items[1]["slug"], "b-root");
-    assert_eq!(items[1]["name"], "Root");
-    assert!(items[1]["parent_category_id"].is_null());
+    assert_eq!(items[1]["id"], 3);
+    assert_eq!(items[1]["name"], "Leaf");
+    assert_eq!(items[1]["parent_category_id"], 1);
 
-    assert_eq!(items[2]["id"], 3);
-    assert_eq!(items[2]["slug"], "z-leaf");
-    assert_eq!(items[2]["name"], "Leaf");
-    assert_eq!(items[2]["parent_category_id"], 1);
+    assert_eq!(items[2]["id"], 1);
+    assert_eq!(items[2]["name"], "Root");
+    assert!(items[2]["parent_category_id"].is_null());
+}
+
+#[tokio::test]
+async fn category_create_accepts_name_without_slug() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("categories-http.db");
+    let _conn = server::db::open_and_prepare(&db_path).unwrap();
+
+    let app = server::app::build_app(db_path).unwrap();
+    let req = Request::builder()
+        .method("POST")
+        .uri("/categories")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "name": "Network"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body = read_json(res.into_body()).await;
+    assert_eq!(body["name"], "Network");
+    assert!(body.get("slug").is_none());
+
+    let list_req = Request::builder()
+        .method("GET")
+        .uri("/categories")
+        .body(Body::empty())
+        .unwrap();
+    let list_res = app.oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_body = read_json(list_res.into_body()).await;
+    assert_eq!(list_body["items"].as_array().unwrap().len(), 1);
+    assert!(list_body["items"][0].get("slug").is_none());
 }
 
 #[tokio::test]
@@ -74,7 +108,7 @@ async fn category_delete_blocked_by_assigned_assets() {
     let db_path = temp.path().join("categories-http.db");
 
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network", None);
+    insert_category(&conn, 1, "Network", None);
     let _ = server::db::repo_assets::create_asset(&mut conn, 1, Some("AST-CAT-001")).unwrap();
 
     let app = server::app::build_app(db_path).unwrap();
@@ -96,8 +130,8 @@ async fn inherited_category_tag_hints_are_returned() {
     let db_path = temp.path().join("categories-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "root", "Root", None);
-    insert_category(&conn, 2, "leaf", "Leaf", Some(1));
+    insert_category(&conn, 1, "Root", None);
+    insert_category(&conn, 2, "Leaf", Some(1));
 
     conn.execute(
         "INSERT INTO tag_definitions (id, tag_key, display_name, value_type) VALUES (?1, ?2, ?3, ?4)",
@@ -140,8 +174,8 @@ async fn category_tag_hint_create_list_and_delete_round_trip() {
     let db_path = temp.path().join("categories-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "root", "Root", None);
-    insert_category(&conn, 2, "leaf", "Leaf", Some(1));
+    insert_category(&conn, 1, "Root", None);
+    insert_category(&conn, 2, "Leaf", Some(1));
     conn.execute(
         "INSERT INTO tag_definitions (id, tag_key, display_name, value_type) VALUES (?1, ?2, ?3, ?4)",
         (1_i64, "owner", "Owner", "text"),
@@ -298,8 +332,8 @@ async fn event_applied_enum_and_external_entity_values_block_lifecycle_deletes()
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
     conn.execute(
-        "INSERT INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (1_i64, "network", "Network"),
+        "INSERT INTO categories (id, name) VALUES (?1, ?2)",
+        (1_i64, "Network"),
     )
     .unwrap();
     conn.execute(
@@ -416,7 +450,7 @@ async fn category_delete_blocked_even_with_only_soft_deleted_assets() {
     let db_path = temp.path().join("categories-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network", None);
+    insert_category(&conn, 1, "Network", None);
     conn.execute(
         "INSERT INTO assets (id, category_id, asset_tag, deleted_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)",
         (1_i64, 1_i64, "AST-SOFT-001"),
@@ -534,24 +568,18 @@ async fn read_json(body: Body) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-fn insert_category(
-    conn: &Connection,
-    id: i64,
-    slug: &str,
-    name: &str,
-    parent_category_id: Option<i64>,
-) {
+fn insert_category(conn: &Connection, id: i64, name: &str, parent_category_id: Option<i64>) {
     conn.execute(
-        "INSERT INTO categories (id, slug, name, parent_category_id) VALUES (?1, ?2, ?3, ?4)",
-        (id, slug, name, parent_category_id),
+        "INSERT INTO categories (id, name, parent_category_id) VALUES (?1, ?2, ?3)",
+        (id, name, parent_category_id),
     )
     .unwrap();
 }
 
 fn seed_tag_definition_reference_graph(conn: &Connection) {
     conn.execute(
-        "INSERT INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (1_i64, "network", "Network"),
+        "INSERT INTO categories (id, name) VALUES (?1, ?2)",
+        (1_i64, "Network"),
     )
     .unwrap();
     conn.execute(
@@ -594,8 +622,8 @@ fn seed_external_entity_reference_graph(conn: &Connection) {
     .unwrap();
 
     conn.execute(
-        "INSERT INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (100_i64, "network", "Network"),
+        "INSERT INTO categories (id, name) VALUES (?1, ?2)",
+        (100_i64, "Network"),
     )
     .unwrap();
     conn.execute(
@@ -624,8 +652,8 @@ fn seed_external_entity_reference_graph(conn: &Connection) {
 
 fn seed_tag_definition_non_event_references(conn: &Connection) {
     conn.execute(
-        "INSERT INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (20_i64, "root", "Root"),
+        "INSERT INTO categories (id, name) VALUES (?1, ?2)",
+        (20_i64, "Root"),
     )
     .unwrap();
     conn.execute(

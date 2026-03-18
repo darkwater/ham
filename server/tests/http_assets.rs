@@ -43,7 +43,7 @@ fn duplicate_manual_tag_returns_deterministic_error() {
     let db_path = temp.path().join("assets.db");
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     set_tag_generator_settings(&conn, "AST", 4, "-");
 
     let first = server::db::repo_assets::create_asset(&mut conn, 1, Some("MANUAL-001")).unwrap();
@@ -216,7 +216,7 @@ fn auto_generates_asset_tag() {
     let db_path = temp.path().join("assets.db");
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     set_tag_generator_settings(&conn, "AST", 4, "-");
 
     let created = server::db::repo_assets::create_asset(&mut conn, 1, None).unwrap();
@@ -230,7 +230,7 @@ fn manual_override_does_not_advance_counter() {
     let db_path = temp.path().join("assets.db");
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     set_tag_generator_settings(&conn, "AST", 4, "-");
 
     let first_auto = server::db::repo_assets::create_asset(&mut conn, 1, None).unwrap();
@@ -249,7 +249,7 @@ fn generator_retries_on_collision() {
     let db_path = temp.path().join("assets.db");
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     set_tag_generator_settings(&conn, "AST", 4, "-");
     set_global_counter(&conn, 1);
 
@@ -272,8 +272,8 @@ fn auto_generation_counter_is_global_across_categories() {
     let db_path = temp.path().join("assets.db");
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
 
-    insert_category(&conn, 1, "network", "Network");
-    insert_category(&conn, 2, "compute", "Compute");
+    insert_category(&conn, 1, "Network");
+    insert_category(&conn, 2, "Compute");
     set_tag_generator_settings(&conn, "AST", 4, "-");
 
     let first = server::db::repo_assets::create_asset(&mut conn, 1, None).unwrap();
@@ -338,8 +338,8 @@ fn assert_unique_index_has_columns(conn: &Connection, table: &str, columns: &[&s
 
 fn seed_for_mutation_and_event_fk(conn: &Connection) {
     conn.execute(
-        "INSERT OR IGNORE INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (1_i64, "network", "Network"),
+        "INSERT OR IGNORE INTO categories (id, name) VALUES (?1, ?2)",
+        (1_i64, "Network"),
     )
     .unwrap();
     conn.execute(
@@ -362,10 +362,10 @@ fn seed_for_mutation_and_event_fk(conn: &Connection) {
     .unwrap();
 }
 
-fn insert_category(conn: &Connection, id: i64, slug: &str, name: &str) {
+fn insert_category(conn: &Connection, id: i64, name: &str) {
     conn.execute(
-        "INSERT INTO categories (id, slug, name) VALUES (?1, ?2, ?3)",
-        (id, slug, name),
+        "INSERT INTO categories (id, name) VALUES (?1, ?2)",
+        (id, name),
     )
     .unwrap();
 }
@@ -404,7 +404,7 @@ async fn asset_update_rejects_tag_value_changes() {
     let db_path = temp.path().join("assets-http.db");
 
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     let created =
         server::db::repo_assets::create_asset(&mut conn, 1, Some("AST-HTTP-001")).unwrap();
 
@@ -436,7 +436,7 @@ async fn asset_create_and_read_succeed() {
     let db_path = temp.path().join("assets-http.db");
 
     let conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
 
     let app = server::app::build_app(db_path).unwrap();
 
@@ -477,7 +477,7 @@ async fn metadata_update_on_active_asset_succeeds() {
     let db_path = temp.path().join("assets-http.db");
 
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     let created =
         server::db::repo_assets::create_asset(&mut conn, 1, Some("AST-HTTP-005")).unwrap();
 
@@ -514,7 +514,7 @@ async fn deleted_assets_are_excluded_unless_include_deleted_true() {
     let db_path = temp.path().join("assets-http.db");
 
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     let created =
         server::db::repo_assets::create_asset(&mut conn, 1, Some("AST-HTTP-002")).unwrap();
 
@@ -557,7 +557,7 @@ async fn metadata_update_on_deleted_asset_returns_gone() {
     let db_path = temp.path().join("assets-http.db");
 
     let mut conn = server::db::open_and_prepare(&db_path).unwrap();
-    insert_category(&conn, 1, "network", "Network");
+    insert_category(&conn, 1, "Network");
     let created =
         server::db::repo_assets::create_asset(&mut conn, 1, Some("AST-HTTP-003")).unwrap();
 

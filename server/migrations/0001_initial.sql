@@ -1,6 +1,5 @@
 CREATE TABLE categories (
     id INTEGER PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

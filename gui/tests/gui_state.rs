@@ -14,7 +14,7 @@ fn loads_catalog_opens_asset_and_fetches_full_timeline() {
     let api = FakeApi::default();
     api.categories
         .borrow_mut()
-        .push(Category::new(1, "network", "Network", None));
+        .push(Category::new(1, "Network", None));
     api.assets.borrow_mut().push(Asset::new(
         11,
         1,

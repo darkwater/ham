@@ -8,16 +8,14 @@ use url::Url;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Category {
     pub id: i64,
-    pub slug: String,
     pub name: String,
     pub parent_category_id: Option<i64>,
 }
 
 impl Category {
-    pub fn new(id: i64, slug: &str, name: &str, parent_category_id: Option<i64>) -> Self {
+    pub fn new(id: i64, name: &str, parent_category_id: Option<i64>) -> Self {
         Self {
             id,
-            slug: slug.to_string(),
             name: name.to_string(),
             parent_category_id,
         }
@@ -414,7 +412,6 @@ fn derive_categories_from_assets(assets: &[Asset]) -> Vec<Category> {
     ids.into_iter()
         .map(|id| Category {
             id,
-            slug: format!("category-{id}"),
             name: format!("Category {id}"),
             parent_category_id: None,
         })
@@ -644,7 +641,6 @@ fn http_error(step: &str, err: ureq::Error) -> ApiError {
 #[derive(Debug, Clone, Deserialize)]
 struct CategoryWire {
     id: i64,
-    slug: String,
     name: String,
     #[serde(default)]
     parent_category_id: Option<i64>,
@@ -654,7 +650,6 @@ impl From<CategoryWire> for Category {
     fn from(value: CategoryWire) -> Self {
         Self {
             id: value.id,
-            slug: value.slug,
             name: value.name,
             parent_category_id: value.parent_category_id,
         }
