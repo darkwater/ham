@@ -125,6 +125,9 @@ enum CliError {
         step: &'static str,
         field: &'static str,
     },
+    UnsupportedCommand {
+        command: &'static str,
+    },
 }
 
 #[derive(Serialize)]
@@ -157,6 +160,19 @@ struct FailureOutput {
     error: ErrorOutput,
 }
 
+#[derive(Serialize)]
+struct UnsupportedCommandOutput {
+    ok: bool,
+    error: UnsupportedCommandErrorOutput,
+}
+
+#[derive(Serialize)]
+struct UnsupportedCommandErrorOutput {
+    code: &'static str,
+    command: &'static str,
+    message: &'static str,
+}
+
 fn main() {
     let _ = domain::domain_ready();
 
@@ -165,19 +181,62 @@ fn main() {
     let mode = cli.output;
     let base_url = cli.base_url;
 
-    match cli.command {
+    let exit_code = run_command(mode, &base_url, cli.command);
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+}
+
+fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
+    match command {
         CliCommand::Flow {
             flow: FlowCommand::ScriptedCore,
         } => match run_scripted_core_flow(&base_url) {
-            Ok(steps) => render_success(mode, steps),
+            Ok(steps) => {
+                render_success(mode, steps);
+                0
+            }
             Err(err) => {
                 render_error(mode, err);
-                std::process::exit(1);
+                1
             }
         },
-        _ => {
-            todo!("non-flow commands are parser-only placeholders for now");
+        CliCommand::Category { category } => {
+            render_error(
+                mode,
+                CliError::UnsupportedCommand {
+                    command: category_command_label(&category),
+                },
+            );
+            2
         }
+        CliCommand::Asset { asset } => {
+            render_error(
+                mode,
+                CliError::UnsupportedCommand {
+                    command: asset_command_label(&asset),
+                },
+            );
+            2
+        }
+    }
+}
+
+fn category_command_label(command: &CategoryCommand) -> &'static str {
+    match command {
+        CategoryCommand::Create(_) => "category.create",
+        CategoryCommand::List => "category.list",
+        CategoryCommand::Delete(_) => "category.delete",
+    }
+}
+
+fn asset_command_label(command: &AssetCommand) -> &'static str {
+    match command {
+        AssetCommand::Create(_) => "asset.create",
+        AssetCommand::Get(_) => "asset.get",
+        AssetCommand::List(_) => "asset.list",
+        AssetCommand::Update(_) => "asset.update",
+        AssetCommand::Delete(_) => "asset.delete",
     }
 }
 
@@ -447,6 +506,17 @@ fn render_error(mode: OutputMode, err: CliError) {
                 message: format!("missing required field `{field}`"),
             },
         },
+        CliError::UnsupportedCommand { command } => {
+            match mode {
+                OutputMode::Json => {
+                    println!("{}", format_unsupported_command_json(command));
+                }
+                OutputMode::Human => {
+                    eprintln!("{}", format_unsupported_command_human(command));
+                }
+            }
+            return;
+        }
     };
 
     match mode {
@@ -472,6 +542,29 @@ fn required_i64(
         })
 }
 
+fn unsupported_command_output(command: &'static str) -> UnsupportedCommandOutput {
+    UnsupportedCommandOutput {
+        ok: false,
+        error: UnsupportedCommandErrorOutput {
+            code: "NOT_IMPLEMENTED",
+            command,
+            message: "command is parsed but not implemented yet; use `flow scripted-core`",
+        },
+    }
+}
+
+fn format_unsupported_command_json(command: &'static str) -> String {
+    serde_json::to_string_pretty(&unsupported_command_output(command)).unwrap()
+}
+
+fn format_unsupported_command_human(command: &'static str) -> String {
+    let payload = unsupported_command_output(command);
+    format!(
+        "ERROR code={} command={} message={}",
+        payload.error.code, payload.error.command, payload.error.message
+    )
+}
+
 fn top_level_keys(value: &Value) -> String {
     value
         .as_object()
@@ -491,6 +584,7 @@ mod tests {
         CliCommand, FlowCommand, OutputMode,
     };
     use clap::{error::ErrorKind, Parser};
+    use serde_json::json;
 
     #[test]
     fn parse_supports_help_flag() {
@@ -564,7 +658,9 @@ mod tests {
         ])
         .unwrap_err();
 
-        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+        let rendered = err.to_string();
+        assert!(rendered.contains("--parent-id"));
+        assert!(rendered.contains("not-a-number"));
     }
 
     #[test]
@@ -595,7 +691,9 @@ mod tests {
     fn parse_category_delete_rejects_positional_id() {
         let err = CliArgs::try_parse_from(["cli", "category", "delete", "42"]).unwrap_err();
 
-        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+        let rendered = err.to_string();
+        assert!(rendered.contains("42"));
+        assert!(rendered.contains("--id"));
     }
 
     #[test]
@@ -651,7 +749,8 @@ mod tests {
         ])
         .unwrap_err();
 
-        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+        let rendered = err.to_string();
+        assert!(rendered.contains("--display-name"));
     }
 
     #[test]
@@ -675,7 +774,9 @@ mod tests {
     fn parse_asset_get_rejects_positional_id() {
         let err = CliArgs::try_parse_from(["cli", "asset", "get", "9"]).unwrap_err();
 
-        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+        let rendered = err.to_string();
+        assert!(rendered.contains("9"));
+        assert!(rendered.contains("--id"));
     }
 
     #[test]
@@ -754,7 +855,9 @@ mod tests {
         ])
         .unwrap_err();
 
-        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+        let rendered = err.to_string();
+        assert!(rendered.contains("9"));
+        assert!(rendered.contains("--id"));
     }
 
     #[test]
@@ -773,6 +876,48 @@ mod tests {
     fn parse_asset_delete_rejects_positional_id() {
         let err = CliArgs::try_parse_from(["cli", "asset", "delete", "9"]).unwrap_err();
 
-        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+        let rendered = err.to_string();
+        assert!(rendered.contains("9"));
+        assert!(rendered.contains("--id"));
+    }
+
+    #[test]
+    fn run_command_non_flow_returns_controlled_error_exit_code() {
+        let exit_code = super::run_command(
+            OutputMode::Json,
+            "http://example.test",
+            CliCommand::Category {
+                category: CategoryCommand::List,
+            },
+        );
+
+        assert_eq!(exit_code, 2);
+    }
+
+    #[test]
+    fn render_error_json_for_non_flow_is_stable() {
+        let rendered = super::format_unsupported_command_json("category.list");
+        let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
+
+        assert_eq!(
+            parsed,
+            json!({
+                "ok": false,
+                "error": {
+                    "code": "NOT_IMPLEMENTED",
+                    "command": "category.list",
+                    "message": "command is parsed but not implemented yet; use `flow scripted-core`"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn render_error_human_for_non_flow_is_stable() {
+        let rendered = super::format_unsupported_command_human("asset.delete");
+        assert_eq!(
+            rendered,
+            "ERROR code=NOT_IMPLEMENTED command=asset.delete message=command is parsed but not implemented yet; use `flow scripted-core`"
+        );
     }
 }
