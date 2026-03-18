@@ -171,6 +171,30 @@ async fn category_create_posts_expected_payload() {
 }
 
 #[tokio::test]
+async fn category_create_rejects_unexpected_payload_shape() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "Telemetry",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "category_create");
+    assert_eq!(body["error"]["status_code"], 400);
+}
+
+#[tokio::test]
 async fn category_create_blank_name_returns_validation_error() {
     let server = StubServer::start(StubConfig::default()).await;
 
@@ -320,7 +344,16 @@ async fn create_category(
         }
     };
 
-    if name == "invalid" {
+    let parent_category_id = payload.get("parent_category_id").and_then(Value::as_i64);
+    let payload_keys = payload
+        .as_object()
+        .map(serde_json::Map::len)
+        .unwrap_or_default();
+    let is_expected_root_payload = name == "Network" && parent_category_id.is_none() && payload_keys == 1;
+    let is_expected_child_payload =
+        name == "Child" && parent_category_id == Some(10) && payload_keys == 2;
+
+    if !is_expected_root_payload && !is_expected_child_payload {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
@@ -328,9 +361,6 @@ async fn create_category(
     }
 
     let category_id = guard.config.unwrap().category_id;
-    let parent_category_id = payload
-        .get("parent_category_id")
-        .and_then(Value::as_i64);
     (
         StatusCode::CREATED,
         Json(json!({"id":category_id,"name":name,"parent_category_id":parent_category_id})),
