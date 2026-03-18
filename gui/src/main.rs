@@ -1,3 +1,4 @@
+use clap::Parser;
 use eframe::egui;
 
 use gui::state::{
@@ -190,21 +191,14 @@ impl eframe::App for GuiApp {
     }
 }
 
-fn should_print_help(args: &[String]) -> bool {
-    args.iter().any(|arg| arg == "--help" || arg == "-h")
-}
+#[derive(Debug, Parser)]
+#[command(name = "gui", about = "Runs the HAM desktop GUI")]
+struct GuiCli;
 
 fn main() -> eframe::Result<()> {
     let _ = domain::domain_ready();
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if should_print_help(&args) {
-        println!("Usage: gui");
-        println!("Runs the HAM desktop GUI");
-        println!("Environment:");
-        println!("  HAM_SERVER_BASE_URL   Server base URL (default: http://127.0.0.1:3000)");
-        return Ok(());
-    }
+    let _cli = GuiCli::parse();
 
     let base_url = std::env::var("HAM_SERVER_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:3000".to_string());
@@ -219,23 +213,24 @@ fn main() -> eframe::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::should_print_help;
+    use super::GuiCli;
+    use clap::{error::ErrorKind, Parser};
 
     #[test]
-    fn detects_long_help_flag() {
-        let args = vec!["--help".to_string()];
-        assert!(should_print_help(&args));
+    fn parse_accepts_no_flags() {
+        let parsed = GuiCli::try_parse_from(["gui"]);
+        assert!(parsed.is_ok());
     }
 
     #[test]
-    fn detects_short_help_flag() {
-        let args = vec!["-h".to_string()];
-        assert!(should_print_help(&args));
+    fn parse_rejects_unknown_flags() {
+        let err = GuiCli::try_parse_from(["gui", "--windowed"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]
-    fn ignores_non_help_flags() {
-        let args = vec!["--windowed".to_string()];
-        assert!(!should_print_help(&args));
+    fn parse_supports_help_flag() {
+        let err = GuiCli::try_parse_from(["gui", "-h"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::DisplayHelp);
     }
 }

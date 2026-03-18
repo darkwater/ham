@@ -1,15 +1,45 @@
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use serde_json::{json, Value};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum OutputMode {
     Json,
     Human,
 }
 
+#[derive(Debug, Parser)]
+#[command(name = "cli", about = "HAM scripted CLI client")]
+struct CliArgs {
+    #[arg(long, value_enum, default_value_t = OutputMode::Json)]
+    output: OutputMode,
+
+    #[arg(long, default_value = "http://127.0.0.1:3000")]
+    base_url: String,
+
+    #[arg(long, hide = true)]
+    db_path: Option<String>,
+
+    #[command(subcommand)]
+    command: CliCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    Flow {
+        #[command(subcommand)]
+        flow: FlowCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum FlowCommand {
+    #[command(name = "scripted-core")]
+    ScriptedCore,
+}
+
 #[derive(Debug)]
 enum CliError {
-    Usage(String),
     Http {
         step: &'static str,
         status_code: Option<u16>,
@@ -54,13 +84,16 @@ struct FailureOutput {
 fn main() {
     let _ = domain::domain_ready();
 
-    let (mode, base_url) = match parse_args(std::env::args().skip(1).collect()) {
-        Ok(v) => v,
-        Err(err) => {
-            render_error(OutputMode::Json, err);
-            std::process::exit(2);
-        }
-    };
+    let cli = CliArgs::parse();
+    let _ = &cli.db_path;
+    let mode = cli.output;
+    let base_url = cli.base_url;
+
+    match cli.command {
+        CliCommand::Flow {
+            flow: FlowCommand::ScriptedCore,
+        } => {}
+    }
 
     match run_scripted_core_flow(&base_url) {
         Ok(steps) => render_success(mode, steps),
@@ -69,66 +102,6 @@ fn main() {
             std::process::exit(1);
         }
     }
-}
-
-fn parse_args(args: Vec<String>) -> Result<(OutputMode, String), CliError> {
-    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        return Err(CliError::Usage(
-            "usage: cli [--output json|human] [--base-url URL] flow scripted-core".to_string(),
-        ));
-    }
-
-    let mut mode = OutputMode::Json;
-    let mut base_url = String::from("http://127.0.0.1:3000");
-
-    let mut i = 0usize;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--output" => {
-                let value = args
-                    .get(i + 1)
-                    .ok_or_else(|| CliError::Usage("missing value for --output".to_string()))?;
-                mode = match value.as_str() {
-                    "json" => OutputMode::Json,
-                    "human" => OutputMode::Human,
-                    _ => {
-                        return Err(CliError::Usage(
-                            "invalid --output, expected json|human".to_string(),
-                        ))
-                    }
-                };
-                i += 2;
-            }
-            "--base-url" => {
-                let value = args
-                    .get(i + 1)
-                    .ok_or_else(|| CliError::Usage("missing value for --base-url".to_string()))?;
-                base_url = value.clone();
-                i += 2;
-            }
-            "--db-path" => {
-                i += 2;
-            }
-            "flow" => {
-                let flow = args
-                    .get(i + 1)
-                    .ok_or_else(|| CliError::Usage("missing flow name".to_string()))?;
-                if flow != "scripted-core" {
-                    return Err(CliError::Usage(
-                        "only `flow scripted-core` is supported".to_string(),
-                    ));
-                }
-                return Ok((mode, base_url));
-            }
-            other => {
-                return Err(CliError::Usage(format!("unknown argument `{other}`")));
-            }
-        }
-    }
-
-    Err(CliError::Usage(
-        "expected: [--output json|human] [--base-url URL] flow scripted-core".to_string(),
-    ))
 }
 
 fn run_scripted_core_flow(base_url: &str) -> Result<Vec<StepResult>, CliError> {
@@ -373,16 +346,6 @@ fn render_success(mode: OutputMode, steps: Vec<StepResult>) {
 
 fn render_error(mode: OutputMode, err: CliError) {
     let body = match err {
-        CliError::Usage(message) => FailureOutput {
-            ok: false,
-            flow: "scripted-core",
-            error: ErrorOutput {
-                code: "USAGE",
-                step: "parse_args",
-                status_code: None,
-                message,
-            },
-        },
         CliError::Http {
             step,
             status_code,
@@ -445,37 +408,41 @@ fn top_level_keys(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, CliError, OutputMode};
+    use super::{CliArgs, CliCommand, FlowCommand, OutputMode};
+    use clap::{error::ErrorKind, Parser};
 
     #[test]
-    fn parse_args_accepts_help_flag() {
-        let parsed = parse_args(vec!["--help".to_string()]);
-        assert!(matches!(
-            parsed,
-            Err(CliError::Usage(message)) if message.contains("usage:")
-        ));
+    fn parse_supports_help_flag() {
+        let err = CliArgs::try_parse_from(["cli", "--help"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::DisplayHelp);
     }
 
     #[test]
-    fn parse_args_accepts_short_help_flag() {
-        let parsed = parse_args(vec!["-h".to_string()]);
-        assert!(matches!(
-            parsed,
-            Err(CliError::Usage(message)) if message.contains("usage:")
-        ));
+    fn parse_rejects_missing_subcommand() {
+        let err = CliArgs::try_parse_from(["cli", "--output", "human"]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingSubcommand);
     }
 
     #[test]
-    fn parse_args_still_parses_flow() {
-        let parsed = parse_args(vec![
-            "--output".to_string(),
-            "human".to_string(),
-            "flow".to_string(),
-            "scripted-core".to_string(),
+    fn parse_scripted_core_flow_and_options() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "--output",
+            "human",
+            "--base-url",
+            "http://example.test:8080",
+            "flow",
+            "scripted-core",
         ])
         .unwrap();
 
-        assert!(matches!(parsed.0, OutputMode::Human));
-        assert_eq!(parsed.1, "http://127.0.0.1:3000");
+        assert!(matches!(parsed.output, OutputMode::Human));
+        assert_eq!(parsed.base_url, "http://example.test:8080");
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Flow {
+                flow: FlowCommand::ScriptedCore
+            }
+        ));
     }
 }
