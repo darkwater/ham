@@ -121,6 +121,10 @@ enum CliError {
         status_code: Option<u16>,
         message: String,
     },
+    Validation {
+        step: &'static str,
+        message: String,
+    },
     MissingField {
         step: &'static str,
         field: &'static str,
@@ -249,17 +253,26 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
 }
 
 fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<Value, CliError> {
+    let name = args.name.trim();
+    if name.is_empty() {
+        return Err(CliError::Validation {
+            step: "category_create",
+            message: "name must not be blank".to_string(),
+        });
+    }
+
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
 
-    let result = post(
-        &agent,
-        base_url,
-        "category_create",
-        "/categories",
-        json!({"name":args.name,"parent_id":args.parent_id}),
-    )?;
+    let body = match args.parent_id {
+        Some(parent_category_id) => {
+            json!({"name": name, "parent_category_id": parent_category_id})
+        }
+        None => json!({"name": name}),
+    };
+
+    let result = post(&agent, base_url, "category_create", "/categories", body)?;
 
     Ok(result.response)
 }
@@ -538,6 +551,16 @@ fn render_error(mode: OutputMode, err: CliError) {
                 message,
             },
         },
+        CliError::Validation { step, message } => FailureOutput {
+            ok: false,
+            flow: "scripted-core",
+            error: ErrorOutput {
+                code: "VALIDATION_ERROR",
+                step,
+                status_code: None,
+                message,
+            },
+        },
         CliError::MissingField { step, field } => FailureOutput {
             ok: false,
             flow: "scripted-core",
@@ -595,6 +618,12 @@ fn render_command_error(mode: OutputMode, command: &'static str, err: CliError) 
             code: "HTTP_ERROR",
             step,
             status_code,
+            message,
+        },
+        CliError::Validation { step, message } => ErrorOutput {
+            code: "VALIDATION_ERROR",
+            step,
+            status_code: None,
             message,
         },
         CliError::MissingField { step, field } => ErrorOutput {

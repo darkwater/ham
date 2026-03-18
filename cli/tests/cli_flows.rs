@@ -129,6 +129,71 @@ async fn category_create_http_error_uses_command_error_envelope() {
 }
 
 #[tokio::test]
+async fn category_create_posts_expected_payload() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let root_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "Network",
+    ])
+    .await;
+    assert!(root_out.status.success(), "stderr: {}", root_out.stderr);
+
+    let child_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "Child",
+        "--parent-id",
+        "10",
+    ])
+    .await;
+    assert!(child_out.status.success(), "stderr: {}", child_out.stderr);
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(
+        guard.category_create_payloads,
+        vec![
+            json!({"name":"Network"}),
+            json!({"name":"Child","parent_category_id":10})
+        ]
+    );
+}
+
+#[tokio::test]
+async fn category_create_blank_name_returns_validation_error() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "   ",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(body["error"]["step"], "category_create");
+}
+
+#[tokio::test]
 async fn scripted_core_flow_succeeds_against_real_server_app() {
     let db_file = tempfile::NamedTempFile::new().unwrap();
     let app = server::app::build_app(db_file.path().to_path_buf()).unwrap();
@@ -192,6 +257,7 @@ struct SharedState {
     config: Option<StubConfig>,
     last_asset_category_id: Option<i64>,
     last_idempotency_key: Option<String>,
+    category_create_payloads: Vec<Value>,
 }
 
 struct StubServer {
@@ -241,16 +307,33 @@ async fn create_category(
     State(state): State<Arc<Mutex<SharedState>>>,
     Json(payload): Json<Value>,
 ) -> (StatusCode, Json<Value>) {
-    if payload.get("name").and_then(Value::as_str) != Some("Network") {
+    let mut guard = state.lock().unwrap();
+    guard.category_create_payloads.push(payload.clone());
+
+    let name = match payload.get("name").and_then(Value::as_str) {
+        Some(name) => name,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
+            )
+        }
+    };
+
+    if name == "invalid" {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
         );
     }
-    let category_id = state.lock().unwrap().config.unwrap().category_id;
+
+    let category_id = guard.config.unwrap().category_id;
+    let parent_category_id = payload
+        .get("parent_category_id")
+        .and_then(Value::as_i64);
     (
         StatusCode::CREATED,
-        Json(json!({"id":category_id,"name":"Network"})),
+        Json(json!({"id":category_id,"name":name,"parent_category_id":parent_category_id})),
     )
 }
 
