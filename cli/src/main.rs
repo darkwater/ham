@@ -30,12 +30,65 @@ enum CliCommand {
         #[command(subcommand)]
         flow: FlowCommand,
     },
+    Category {
+        #[command(subcommand)]
+        category: CategoryCommand,
+    },
+    Asset {
+        #[command(subcommand)]
+        asset: AssetCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 enum FlowCommand {
     #[command(name = "scripted-core")]
     ScriptedCore,
+}
+
+#[derive(Debug, Subcommand)]
+enum CategoryCommand {
+    Create {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        parent_id: Option<i64>,
+    },
+    List,
+    Delete {
+        id: i64,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AssetCommand {
+    Create {
+        #[arg(long)]
+        category_id: i64,
+        #[arg(long)]
+        asset_tag: String,
+        #[arg(long)]
+        display_name: Option<String>,
+    },
+    Get {
+        id: i64,
+        #[arg(long)]
+        include_deleted: bool,
+    },
+    List {
+        #[arg(long)]
+        include_deleted: bool,
+    },
+    Update {
+        id: i64,
+        #[arg(long, conflicts_with = "clear_display_name")]
+        display_name: Option<String>,
+        #[arg(long)]
+        clear_display_name: bool,
+    },
+    Delete {
+        id: i64,
+    },
 }
 
 #[derive(Debug)]
@@ -92,14 +145,15 @@ fn main() {
     match cli.command {
         CliCommand::Flow {
             flow: FlowCommand::ScriptedCore,
-        } => {}
-    }
-
-    match run_scripted_core_flow(&base_url) {
-        Ok(steps) => render_success(mode, steps),
-        Err(err) => {
-            render_error(mode, err);
-            std::process::exit(1);
+        } => match run_scripted_core_flow(&base_url) {
+            Ok(steps) => render_success(mode, steps),
+            Err(err) => {
+                render_error(mode, err);
+                std::process::exit(1);
+            }
+        },
+        _ => {
+            todo!("non-flow commands are parser-only placeholders for now");
         }
     }
 }
@@ -408,7 +462,7 @@ fn top_level_keys(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CliArgs, CliCommand, FlowCommand, OutputMode};
+    use super::{AssetCommand, CategoryCommand, CliArgs, CliCommand, FlowCommand, OutputMode};
     use clap::{error::ErrorKind, Parser};
 
     #[test]
@@ -442,6 +496,180 @@ mod tests {
             parsed.command,
             CliCommand::Flow {
                 flow: FlowCommand::ScriptedCore
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_category_create_with_parent_id() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "category",
+            "create",
+            "--name",
+            "Servers",
+            "--parent-id",
+            "10",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Category {
+                category: CategoryCommand::Create {
+                    name,
+                    parent_id: Some(10)
+                }
+            } if name == "Servers"
+        ));
+    }
+
+    #[test]
+    fn parse_category_create_rejects_non_numeric_parent_id() {
+        let err = CliArgs::try_parse_from([
+            "cli",
+            "category",
+            "create",
+            "--name",
+            "Servers",
+            "--parent-id",
+            "not-a-number",
+        ])
+        .unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn parse_category_list() {
+        let parsed = CliArgs::try_parse_from(["cli", "category", "list"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Category {
+                category: CategoryCommand::List
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_category_delete() {
+        let parsed = CliArgs::try_parse_from(["cli", "category", "delete", "42"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Category {
+                category: CategoryCommand::Delete { id: 42 }
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_create() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "create",
+            "--category-id",
+            "3",
+            "--asset-tag",
+            "AST-100",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Create {
+                    category_id: 3,
+                    asset_tag,
+                    display_name: None
+                }
+            } if asset_tag == "AST-100"
+        ));
+    }
+
+    #[test]
+    fn parse_asset_get_with_include_deleted() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "get", "9", "--include-deleted"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Get {
+                    id: 9,
+                    include_deleted: true
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_list_with_include_deleted() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "list", "--include-deleted"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::List {
+                    include_deleted: true
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_update_display_name() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "update",
+            "9",
+            "--display-name",
+            "Core Router",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Update {
+                    id: 9,
+                    display_name: Some(name),
+                    clear_display_name: false
+                }
+            } if name == "Core Router"
+        ));
+    }
+
+    #[test]
+    fn parse_asset_update_clear_display_name() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "update", "9", "--clear-display-name"])
+                .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Update {
+                    id: 9,
+                    display_name: None,
+                    clear_display_name: true
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_delete() {
+        let parsed = CliArgs::try_parse_from(["cli", "asset", "delete", "9"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Delete { id: 9 }
             }
         ));
     }
