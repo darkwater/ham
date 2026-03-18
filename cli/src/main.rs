@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -48,47 +48,70 @@ enum FlowCommand {
 
 #[derive(Debug, Subcommand)]
 enum CategoryCommand {
-    Create {
-        #[arg(long)]
-        name: String,
-        #[arg(long)]
-        parent_id: Option<i64>,
-    },
+    Create(CategoryCreateArgs),
     List,
-    Delete {
-        id: i64,
-    },
+    Delete(CategoryDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct CategoryCreateArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    parent_id: Option<i64>,
+}
+
+#[derive(Debug, Args)]
+struct CategoryDeleteArgs {
+    #[arg(long)]
+    id: i64,
 }
 
 #[derive(Debug, Subcommand)]
 enum AssetCommand {
-    Create {
-        #[arg(long)]
-        category_id: i64,
-        #[arg(long)]
-        asset_tag: String,
-        #[arg(long)]
-        display_name: Option<String>,
-    },
-    Get {
-        id: i64,
-        #[arg(long)]
-        include_deleted: bool,
-    },
-    List {
-        #[arg(long)]
-        include_deleted: bool,
-    },
-    Update {
-        id: i64,
-        #[arg(long, conflicts_with = "clear_display_name")]
-        display_name: Option<String>,
-        #[arg(long)]
-        clear_display_name: bool,
-    },
-    Delete {
-        id: i64,
-    },
+    Create(AssetCreateArgs),
+    Get(AssetGetArgs),
+    List(AssetListArgs),
+    Update(AssetUpdateArgs),
+    Delete(AssetDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct AssetCreateArgs {
+    #[arg(long)]
+    category_id: i64,
+    #[arg(long)]
+    asset_tag: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct AssetGetArgs {
+    #[arg(long)]
+    id: i64,
+    #[arg(long)]
+    include_deleted: bool,
+}
+
+#[derive(Debug, Args)]
+struct AssetListArgs {
+    #[arg(long)]
+    include_deleted: bool,
+}
+
+#[derive(Debug, Args)]
+struct AssetUpdateArgs {
+    #[arg(long)]
+    id: i64,
+    #[arg(long, conflicts_with = "clear_display_name")]
+    display_name: Option<String>,
+    #[arg(long)]
+    clear_display_name: bool,
+}
+
+#[derive(Debug, Args)]
+struct AssetDeleteArgs {
+    #[arg(long)]
+    id: i64,
 }
 
 #[derive(Debug)]
@@ -462,7 +485,11 @@ fn top_level_keys(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AssetCommand, CategoryCommand, CliArgs, CliCommand, FlowCommand, OutputMode};
+    use super::{
+        AssetCommand, AssetCreateArgs, AssetDeleteArgs, AssetGetArgs, AssetListArgs,
+        AssetUpdateArgs, CategoryCommand, CategoryCreateArgs, CategoryDeleteArgs, CliArgs,
+        CliCommand, FlowCommand, OutputMode,
+    };
     use clap::{error::ErrorKind, Parser};
 
     #[test]
@@ -516,10 +543,10 @@ mod tests {
         assert!(matches!(
             parsed.command,
             CliCommand::Category {
-                category: CategoryCommand::Create {
+                category: CategoryCommand::Create(CategoryCreateArgs {
                     name,
                     parent_id: Some(10)
-                }
+                })
             } if name == "Servers"
         ));
     }
@@ -554,14 +581,21 @@ mod tests {
 
     #[test]
     fn parse_category_delete() {
-        let parsed = CliArgs::try_parse_from(["cli", "category", "delete", "42"]).unwrap();
+        let parsed = CliArgs::try_parse_from(["cli", "category", "delete", "--id", "42"]).unwrap();
 
         assert!(matches!(
             parsed.command,
             CliCommand::Category {
-                category: CategoryCommand::Delete { id: 42 }
+                category: CategoryCommand::Delete(CategoryDeleteArgs { id: 42 })
             }
         ));
+    }
+
+    #[test]
+    fn parse_category_delete_rejects_positional_id() {
+        let err = CliArgs::try_parse_from(["cli", "category", "delete", "42"]).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]
@@ -580,29 +614,68 @@ mod tests {
         assert!(matches!(
             parsed.command,
             CliCommand::Asset {
-                asset: AssetCommand::Create {
+                asset: AssetCommand::Create(AssetCreateArgs {
                     category_id: 3,
-                    asset_tag,
-                    display_name: None
-                }
+                    asset_tag: Some(asset_tag)
+                })
             } if asset_tag == "AST-100"
         ));
     }
 
     #[test]
-    fn parse_asset_get_with_include_deleted() {
+    fn parse_asset_create_without_optional_asset_tag() {
         let parsed =
-            CliArgs::try_parse_from(["cli", "asset", "get", "9", "--include-deleted"]).unwrap();
+            CliArgs::try_parse_from(["cli", "asset", "create", "--category-id", "3"]).unwrap();
 
         assert!(matches!(
             parsed.command,
             CliCommand::Asset {
-                asset: AssetCommand::Get {
-                    id: 9,
-                    include_deleted: true
-                }
+                asset: AssetCommand::Create(AssetCreateArgs {
+                    category_id: 3,
+                    asset_tag: None
+                })
             }
         ));
+    }
+
+    #[test]
+    fn parse_asset_create_rejects_display_name() {
+        let err = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "create",
+            "--category-id",
+            "3",
+            "--display-name",
+            "Core Router",
+        ])
+        .unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn parse_asset_get_with_include_deleted() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "get", "--id", "9", "--include-deleted"])
+                .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Get(AssetGetArgs {
+                    id: 9,
+                    include_deleted: true
+                })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_get_rejects_positional_id() {
+        let err = CliArgs::try_parse_from(["cli", "asset", "get", "9"]).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]
@@ -613,9 +686,9 @@ mod tests {
         assert!(matches!(
             parsed.command,
             CliCommand::Asset {
-                asset: AssetCommand::List {
+                asset: AssetCommand::List(AssetListArgs {
                     include_deleted: true
-                }
+                })
             }
         ));
     }
@@ -626,6 +699,7 @@ mod tests {
             "cli",
             "asset",
             "update",
+            "--id",
             "9",
             "--display-name",
             "Core Router",
@@ -635,42 +709,70 @@ mod tests {
         assert!(matches!(
             parsed.command,
             CliCommand::Asset {
-                asset: AssetCommand::Update {
+                asset: AssetCommand::Update(AssetUpdateArgs {
                     id: 9,
                     display_name: Some(name),
                     clear_display_name: false
-                }
+                })
             } if name == "Core Router"
         ));
     }
 
     #[test]
     fn parse_asset_update_clear_display_name() {
-        let parsed =
-            CliArgs::try_parse_from(["cli", "asset", "update", "9", "--clear-display-name"])
-                .unwrap();
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "update",
+            "--id",
+            "9",
+            "--clear-display-name",
+        ])
+        .unwrap();
 
         assert!(matches!(
             parsed.command,
             CliCommand::Asset {
-                asset: AssetCommand::Update {
+                asset: AssetCommand::Update(AssetUpdateArgs {
                     id: 9,
                     display_name: None,
                     clear_display_name: true
-                }
+                })
             }
         ));
     }
 
     #[test]
+    fn parse_asset_update_rejects_positional_id() {
+        let err = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "update",
+            "9",
+            "--display-name",
+            "Core Router",
+        ])
+        .unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
     fn parse_asset_delete() {
-        let parsed = CliArgs::try_parse_from(["cli", "asset", "delete", "9"]).unwrap();
+        let parsed = CliArgs::try_parse_from(["cli", "asset", "delete", "--id", "9"]).unwrap();
 
         assert!(matches!(
             parsed.command,
             CliCommand::Asset {
-                asset: AssetCommand::Delete { id: 9 }
+                asset: AssetCommand::Delete(AssetDeleteArgs { id: 9 })
             }
         ));
+    }
+
+    #[test]
+    fn parse_asset_delete_rejects_positional_id() {
+        let err = CliArgs::try_parse_from(["cli", "asset", "delete", "9"]).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 }
