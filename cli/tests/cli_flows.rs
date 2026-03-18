@@ -171,7 +171,7 @@ async fn category_create_posts_expected_payload() {
 }
 
 #[tokio::test]
-async fn category_create_rejects_unexpected_payload_shape() {
+async fn category_create_accepts_contract_valid_payload_shape() {
     let server = StubServer::start(StubConfig::default()).await;
 
     let out = run_cli([
@@ -186,12 +186,28 @@ async fn category_create_rejects_unexpected_payload_shape() {
     ])
     .await;
 
-    assert!(!out.status.success());
+    assert!(out.status.success(), "stderr: {}", out.stderr);
 
-    let body: Value = serde_json::from_str(&out.stdout).unwrap();
-    assert_eq!(body["error"]["code"], "HTTP_ERROR");
-    assert_eq!(body["error"]["step"], "category_create");
-    assert_eq!(body["error"]["status_code"], 400);
+    let guard = server.state.lock().unwrap();
+    assert_eq!(guard.category_create_payloads, vec![json!({"name":"Telemetry"})]);
+}
+
+#[tokio::test]
+async fn create_category_stub_rejects_non_contract_payload_shape() {
+    let state = Arc::new(Mutex::new(SharedState {
+        config: Some(StubConfig::default()),
+        ..SharedState::default()
+    }));
+
+    let (status, _) = create_category(
+        State(state.clone()),
+        Json(json!({"name":"Telemetry","parent_category_id":"10"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = create_category(State(state), Json(json!({"name":"Telemetry","extra":true}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -334,8 +350,8 @@ async fn create_category(
     let mut guard = state.lock().unwrap();
     guard.category_create_payloads.push(payload.clone());
 
-    let name = match payload.get("name").and_then(Value::as_str) {
-        Some(name) => name,
+    let payload_obj = match payload.as_object() {
+        Some(payload_obj) => payload_obj,
         None => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -344,16 +360,40 @@ async fn create_category(
         }
     };
 
-    let parent_category_id = payload.get("parent_category_id").and_then(Value::as_i64);
-    let payload_keys = payload
-        .as_object()
-        .map(serde_json::Map::len)
-        .unwrap_or_default();
-    let is_expected_root_payload = name == "Network" && parent_category_id.is_none() && payload_keys == 1;
-    let is_expected_child_payload =
-        name == "Child" && parent_category_id == Some(10) && payload_keys == 2;
+    let name = match payload_obj.get("name").and_then(Value::as_str) {
+        Some(name) if !name.trim().is_empty() => name,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
+            )
+        }
+    };
 
-    if !is_expected_root_payload && !is_expected_child_payload {
+    let parent_category_id = match payload_obj.get("parent_category_id") {
+        Some(value) => match value.as_i64() {
+            Some(parent_category_id) => Some(parent_category_id),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
+                )
+            }
+        },
+        None => None,
+    };
+
+    if payload_obj
+        .keys()
+        .any(|key| key != "name" && key != "parent_category_id")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
+        );
+    }
+
+    if name == "invalid" {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"reason_code":"INVALID_CATEGORY_PAYLOAD"})),
