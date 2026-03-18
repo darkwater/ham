@@ -230,15 +230,26 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
                     1
                 }
             },
-            unsupported => {
-                render_error(
-                    mode,
-                    CliError::UnsupportedCommand {
-                        command: category_command_label(&unsupported),
-                    },
-                );
-                2
-            }
+            CategoryCommand::List => match run_category_list(base_url) {
+                Ok(result) => {
+                    render_command_success(mode, "category list", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "category list", err);
+                    1
+                }
+            },
+            CategoryCommand::Delete(args) => match run_category_delete(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "category delete", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "category delete", err);
+                    1
+                }
+            },
         },
         CliCommand::Asset { asset } => {
             render_error(
@@ -277,12 +288,22 @@ fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<Value
     Ok(result.response)
 }
 
-fn category_command_label(command: &CategoryCommand) -> &'static str {
-    match command {
-        CategoryCommand::Create(_) => "category.create",
-        CategoryCommand::List => "category.list",
-        CategoryCommand::Delete(_) => "category.delete",
-    }
+fn run_category_list(base_url: &str) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let result = get(&agent, base_url, "category_list", "/categories")?;
+    Ok(result.response)
+}
+
+fn run_category_delete(base_url: &str, args: CategoryDeleteArgs) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let result = delete_by_id(&agent, base_url, "category_delete", "/categories", args.id)?;
+    Ok(result.response)
 }
 
 fn asset_command_label(command: &AssetCommand) -> &'static str {
@@ -477,6 +498,43 @@ fn get(
 ) -> Result<StepResult, CliError> {
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     match agent.get(&url).call() {
+        Ok(resp) => Ok(StepResult {
+            action,
+            status_code: resp.status(),
+            response: parse_response_body(resp),
+        }),
+        Err(ureq::Error::Status(status, resp)) => Err(CliError::Http {
+            step: action,
+            status_code: Some(status),
+            message: parse_response_body(resp).to_string(),
+        }),
+        Err(err) => Err(CliError::Http {
+            step: action,
+            status_code: None,
+            message: err.to_string(),
+        }),
+    }
+}
+
+fn delete_by_id(
+    agent: &ureq::Agent,
+    base_url: &str,
+    action: &'static str,
+    collection_path: &str,
+    id: i64,
+) -> Result<StepResult, CliError> {
+    let path = format!("{}/{}", collection_path.trim_end_matches('/'), id);
+    delete(agent, base_url, action, &path)
+}
+
+fn delete(
+    agent: &ureq::Agent,
+    base_url: &str,
+    action: &'static str,
+    path: &str,
+) -> Result<StepResult, CliError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    match agent.delete(&url).call() {
         Ok(resp) => Ok(StepResult {
             action,
             status_code: resp.status(),
@@ -719,8 +777,10 @@ mod tests {
         AssetUpdateArgs, CategoryCommand, CategoryCreateArgs, CategoryDeleteArgs, CliArgs,
         CliCommand, FlowCommand, OutputMode,
     };
+    use axum::{extract::Path, routing::{delete, get}, Json, Router};
     use clap::{error::ErrorKind, Parser};
     use serde_json::json;
+    use tokio::{net::TcpListener, time::Duration};
 
     #[test]
     fn parse_supports_help_flag() {
@@ -1018,16 +1078,100 @@ mod tests {
     }
 
     #[test]
-    fn run_command_non_flow_returns_controlled_error_exit_code() {
+    fn run_command_unsupported_returns_controlled_error_exit_code() {
         let exit_code = super::run_command(
             OutputMode::Json,
             "http://example.test",
-            CliCommand::Category {
-                category: CategoryCommand::List,
+            CliCommand::Asset {
+                asset: AssetCommand::List(AssetListArgs {
+                    include_deleted: false,
+                }),
             },
         );
 
         assert_eq!(exit_code, 2);
+    }
+
+    #[tokio::test]
+    async fn category_list_gets_categories() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{addr}");
+
+        let app = Router::new().route(
+            "/categories",
+            get(|| async {
+                Json(json!({
+                    "items": [
+                        {"id": 1, "name": "Network", "parent_category_id": null}
+                    ]
+                }))
+            }),
+        );
+
+        let _join = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        wait_for_server(&base_url).await;
+
+        let exit_code = tokio::task::spawn_blocking(move || {
+            super::run_command(
+                OutputMode::Json,
+                &base_url,
+                CliCommand::Category {
+                    category: CategoryCommand::List,
+                },
+            )
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn category_delete_calls_delete_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{addr}");
+
+        let app = Router::new().route(
+            "/categories/:id",
+            delete(|Path(id): Path<i64>| async move {
+                assert_eq!(id, 42);
+                Json(json!({"ok": true}))
+            }),
+        );
+
+        let _join = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        wait_for_server(&base_url).await;
+
+        let exit_code = tokio::task::spawn_blocking(move || {
+            super::run_command(
+                OutputMode::Json,
+                &base_url,
+                CliCommand::Category {
+                    category: CategoryCommand::Delete(CategoryDeleteArgs { id: 42 }),
+                },
+            )
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(exit_code, 0);
+    }
+
+    async fn wait_for_server(base_url: &str) {
+        let host = base_url.trim_start_matches("http://");
+        for _ in 0..50 {
+            if std::net::TcpStream::connect(host).is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("server at {base_url} did not become ready in time");
     }
 
     #[test]
