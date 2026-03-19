@@ -162,13 +162,6 @@ struct FailureOutput {
 }
 
 #[derive(Serialize)]
-struct CommandSuccessOutput {
-    ok: bool,
-    command: &'static str,
-    result: Value,
-}
-
-#[derive(Serialize)]
 struct CommandFailureOutput {
     ok: bool,
     command: &'static str,
@@ -292,7 +285,7 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
     }
 }
 
-fn run_asset_create(base_url: &str, args: AssetCreateArgs) -> Result<Value, CliError> {
+fn run_asset_create(base_url: &str, args: AssetCreateArgs) -> Result<StepResult, CliError> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
@@ -302,11 +295,10 @@ fn run_asset_create(base_url: &str, args: AssetCreateArgs) -> Result<Value, CliE
         None => json!({"category_id": args.category_id}),
     };
 
-    let result = post(&agent, base_url, "asset_create", "/assets", body)?;
-    Ok(result.response)
+    post(&agent, base_url, "asset_create", "/assets", body)
 }
 
-fn run_asset_get(base_url: &str, args: AssetGetArgs) -> Result<Value, CliError> {
+fn run_asset_get(base_url: &str, args: AssetGetArgs) -> Result<StepResult, CliError> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
@@ -316,11 +308,10 @@ fn run_asset_get(base_url: &str, args: AssetGetArgs) -> Result<Value, CliError> 
         path.push_str("?include_deleted=true");
     }
 
-    let result = get(&agent, base_url, "asset_get", &path)?;
-    Ok(result.response)
+    get(&agent, base_url, "asset_get", &path)
 }
 
-fn run_asset_list(base_url: &str, args: AssetListArgs) -> Result<Value, CliError> {
+fn run_asset_list(base_url: &str, args: AssetListArgs) -> Result<StepResult, CliError> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
@@ -330,11 +321,10 @@ fn run_asset_list(base_url: &str, args: AssetListArgs) -> Result<Value, CliError
         path.push_str("?include_deleted=true");
     }
 
-    let result = get(&agent, base_url, "asset_list", &path)?;
-    Ok(result.response)
+    get(&agent, base_url, "asset_list", &path)
 }
 
-fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<Value, CliError> {
+fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<StepResult, CliError> {
     if args.display_name.is_some() && args.clear_display_name {
         return Err(CliError::Validation {
             step: "asset_update",
@@ -359,20 +349,18 @@ fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<Value, CliE
         .timeout(std::time::Duration::from_secs(5))
         .build();
     let path = format!("/assets/{}", args.id);
-    let result = patch(&agent, base_url, "asset_update", &path, body)?;
-    Ok(result.response)
+    patch(&agent, base_url, "asset_update", &path, body)
 }
 
-fn run_asset_delete(base_url: &str, args: AssetDeleteArgs) -> Result<Value, CliError> {
+fn run_asset_delete(base_url: &str, args: AssetDeleteArgs) -> Result<StepResult, CliError> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
 
-    let result = delete_by_id(&agent, base_url, "asset_delete", "/assets", args.id)?;
-    Ok(result.response)
+    delete_by_id(&agent, base_url, "asset_delete", "/assets", args.id)
 }
 
-fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<Value, CliError> {
+fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<StepResult, CliError> {
     let name = args.name.trim();
     if name.is_empty() {
         return Err(CliError::Validation {
@@ -392,27 +380,23 @@ fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<Value
         None => json!({"name": name}),
     };
 
-    let result = post(&agent, base_url, "category_create", "/categories", body)?;
-
-    Ok(result.response)
+    post(&agent, base_url, "category_create", "/categories", body)
 }
 
-fn run_category_list(base_url: &str) -> Result<Value, CliError> {
+fn run_category_list(base_url: &str) -> Result<StepResult, CliError> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
 
-    let result = get(&agent, base_url, "category_list", "/categories")?;
-    Ok(result.response)
+    get(&agent, base_url, "category_list", "/categories")
 }
 
-fn run_category_delete(base_url: &str, args: CategoryDeleteArgs) -> Result<Value, CliError> {
+fn run_category_delete(base_url: &str, args: CategoryDeleteArgs) -> Result<StepResult, CliError> {
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
 
-    let result = delete_by_id(&agent, base_url, "category_delete", "/categories", args.id)?;
-    Ok(result.response)
+    delete_by_id(&agent, base_url, "category_delete", "/categories", args.id)
 }
 
 fn run_scripted_core_flow(base_url: &str) -> Result<Vec<StepResult>, CliError> {
@@ -770,18 +754,38 @@ fn render_error(mode: OutputMode, err: CliError) {
     }
 }
 
-fn render_command_success(mode: OutputMode, command: &'static str, result: Value) {
+fn render_command_success(mode: OutputMode, command: &'static str, result: StepResult) {
     match mode {
-        OutputMode::Json => println!(
-            "{}",
-            serde_json::to_string_pretty(&CommandSuccessOutput {
-                ok: true,
-                command,
-                result,
-            })
-            .unwrap()
-        ),
-        OutputMode::Human => println!("DONE command={} keys={}", command, top_level_keys(&result)),
+        OutputMode::Json => {
+            if result.status_code == 204 {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &json!({"ok": true, "status_code": 204, "response": null})
+                    )
+                    .unwrap()
+                );
+            } else {
+                println!("{}", serde_json::to_string_pretty(&result.response).unwrap());
+            }
+        }
+        OutputMode::Human => {
+            if result.status_code == 204 {
+                println!("OK status=204");
+            } else if command.ends_with(" list") {
+                let items = result
+                    .response
+                    .get("items")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                for item in items {
+                    println!("{}", summarize_human_line(&item));
+                }
+            } else {
+                println!("{}", summarize_human_line(&result.response));
+            }
+        }
     }
 }
 
@@ -853,6 +857,31 @@ fn top_level_keys(value: &Value) -> String {
             k.join(",")
         })
         .unwrap_or_default()
+}
+
+fn summarize_human_line(value: &Value) -> String {
+    if let Some(map) = value.as_object() {
+        let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let parts: Vec<String> = keys
+            .into_iter()
+            .map(|key| format!("{key}={}", compact_json_value(&map[key])))
+            .collect();
+        if parts.is_empty() {
+            "OK".to_string()
+        } else {
+            format!("OK {}", parts.join(" "))
+        }
+    } else {
+        format!("OK value={}", compact_json_value(value))
+    }
+}
+
+fn compact_json_value(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
 }
 
 #[cfg(test)]
