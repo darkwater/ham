@@ -102,7 +102,7 @@ struct AssetListArgs {
 struct AssetUpdateArgs {
     #[arg(long)]
     id: i64,
-    #[arg(long, conflicts_with = "clear_display_name")]
+    #[arg(long)]
     display_name: Option<String>,
     #[arg(long)]
     clear_display_name: bool,
@@ -273,15 +273,36 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
                         1
                     }
                 },
-                _ => {
-                    render_error(
-                        mode,
-                        CliError::UnsupportedCommand {
-                            command: asset_command_label(&asset),
-                        },
-                    );
-                    2
-                }
+                AssetCommand::List(args) => match run_asset_list(base_url, args) {
+                    Ok(result) => {
+                        render_command_success(mode, "asset list", result);
+                        0
+                    }
+                    Err(err) => {
+                        render_command_error(mode, "asset list", err);
+                        1
+                    }
+                },
+                AssetCommand::Update(args) => match run_asset_update(base_url, args) {
+                    Ok(result) => {
+                        render_command_success(mode, "asset update", result);
+                        0
+                    }
+                    Err(err) => {
+                        render_command_error(mode, "asset update", err);
+                        1
+                    }
+                },
+                AssetCommand::Delete(args) => match run_asset_delete(base_url, args) {
+                    Ok(result) => {
+                        render_command_success(mode, "asset delete", result);
+                        0
+                    }
+                    Err(err) => {
+                        render_command_error(mode, "asset delete", err);
+                        1
+                    }
+                },
             }
         }
     }
@@ -312,6 +333,58 @@ fn run_asset_get(base_url: &str, args: AssetGetArgs) -> Result<Value, CliError> 
     }
 
     let result = get(&agent, base_url, "asset_get", &path)?;
+    Ok(result.response)
+}
+
+fn run_asset_list(base_url: &str, args: AssetListArgs) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let mut path = String::from("/assets");
+    if args.include_deleted {
+        path.push_str("?include_deleted=true");
+    }
+
+    let result = get(&agent, base_url, "asset_list", &path)?;
+    Ok(result.response)
+}
+
+fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<Value, CliError> {
+    if args.display_name.is_some() && args.clear_display_name {
+        return Err(CliError::Validation {
+            step: "asset_update",
+            message: "--display-name and --clear-display-name cannot be used together"
+                .to_string(),
+        });
+    }
+
+    let body = if let Some(display_name) = args.display_name {
+        json!({"display_name": display_name})
+    } else if args.clear_display_name {
+        json!({"clear_display_name": true})
+    } else {
+        return Err(CliError::Validation {
+            step: "asset_update",
+            message: "at least one update field is required (--display-name or --clear-display-name)"
+                .to_string(),
+        });
+    };
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let path = format!("/assets/{}", args.id);
+    let result = patch(&agent, base_url, "asset_update", &path, body)?;
+    Ok(result.response)
+}
+
+fn run_asset_delete(base_url: &str, args: AssetDeleteArgs) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let result = delete_by_id(&agent, base_url, "asset_delete", "/assets", args.id)?;
     Ok(result.response)
 }
 
@@ -550,6 +623,37 @@ fn get(
 ) -> Result<StepResult, CliError> {
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     match agent.get(&url).call() {
+        Ok(resp) => Ok(StepResult {
+            action,
+            status_code: resp.status(),
+            response: parse_response_body(resp),
+        }),
+        Err(ureq::Error::Status(status, resp)) => Err(CliError::Http {
+            step: action,
+            status_code: Some(status),
+            message: parse_response_body(resp).to_string(),
+        }),
+        Err(err) => Err(CliError::Http {
+            step: action,
+            status_code: None,
+            message: err.to_string(),
+        }),
+    }
+}
+
+fn patch(
+    agent: &ureq::Agent,
+    base_url: &str,
+    action: &'static str,
+    path: &str,
+    body: Value,
+) -> Result<StepResult, CliError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    match agent
+        .request("PATCH", &url)
+        .set("content-type", "application/json")
+        .send_string(&body.to_string())
+    {
         Ok(resp) => Ok(StepResult {
             action,
             status_code: resp.status(),

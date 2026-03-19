@@ -440,6 +440,176 @@ async fn asset_get_appends_include_deleted_query_when_set() {
 }
 
 #[tokio::test]
+async fn asset_list_supports_include_deleted_query() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let default_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "list",
+    ])
+    .await;
+    assert!(default_out.status.success(), "stderr: {}", default_out.stderr);
+
+    let include_deleted_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "list",
+        "--include-deleted",
+    ])
+    .await;
+    assert!(
+        include_deleted_out.status.success(),
+        "stderr: {}",
+        include_deleted_out.stderr
+    );
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(
+        guard.asset_list_uris,
+        vec![
+            "/assets".to_string(),
+            "/assets?include_deleted=true".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn asset_update_sets_display_name() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "update",
+        "--id",
+        "101",
+        "--display-name",
+        "Core Router",
+    ])
+    .await;
+    assert!(out.status.success(), "stderr: {}", out.stderr);
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(guard.asset_update_uris, vec!["/assets/101".to_string()]);
+    assert_eq!(
+        guard.asset_update_payloads,
+        vec![json!({"display_name":"Core Router"})]
+    );
+}
+
+#[tokio::test]
+async fn asset_update_clears_display_name() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "update",
+        "--id",
+        "101",
+        "--clear-display-name",
+    ])
+    .await;
+    assert!(out.status.success(), "stderr: {}", out.stderr);
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(guard.asset_update_uris, vec!["/assets/101".to_string()]);
+    assert_eq!(
+        guard.asset_update_payloads,
+        vec![json!({"clear_display_name":true})]
+    );
+}
+
+#[tokio::test]
+async fn asset_update_rejects_conflicting_flags() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "update",
+        "--id",
+        "101",
+        "--display-name",
+        "Core Router",
+        "--clear-display-name",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["ok"], false);
+    assert_eq!(body["command"], "asset update");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(body["error"]["step"], "asset_update");
+    assert_eq!(
+        body["error"]["message"],
+        "--display-name and --clear-display-name cannot be used together"
+    );
+}
+
+#[tokio::test]
+async fn asset_update_rejects_missing_update_fields() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "update",
+        "--id",
+        "101",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["ok"], false);
+    assert_eq!(body["command"], "asset update");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(body["error"]["step"], "asset_update");
+    assert_eq!(
+        body["error"]["message"],
+        "at least one update field is required (--display-name or --clear-display-name)"
+    );
+}
+
+#[tokio::test]
+async fn asset_delete_calls_delete_endpoint() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "delete",
+        "--id",
+        "101",
+    ])
+    .await;
+    assert!(out.status.success(), "stderr: {}", out.stderr);
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(guard.asset_delete_uris, vec!["/assets/101".to_string()]);
+}
+
+#[tokio::test]
 async fn scripted_core_flow_succeeds_against_real_server_app() {
     let db_file = tempfile::NamedTempFile::new().unwrap();
     let app = server::app::build_app(db_file.path().to_path_buf()).unwrap();
@@ -505,7 +675,11 @@ struct SharedState {
     last_idempotency_key: Option<String>,
     category_create_payloads: Vec<Value>,
     asset_create_payloads: Vec<Value>,
+    asset_list_uris: Vec<String>,
     asset_get_uris: Vec<String>,
+    asset_update_uris: Vec<String>,
+    asset_update_payloads: Vec<Value>,
+    asset_delete_uris: Vec<String>,
 }
 
 struct StubServer {
@@ -529,7 +703,10 @@ impl StubServer {
             .route("/external-entities", post(create_external_entity))
             .route("/event-types", post(create_event_type))
             .route("/assets", get(assets_list).post(create_asset))
-            .route("/assets/:id", get(get_asset))
+            .route(
+                "/assets/:id",
+                get(get_asset).patch(update_asset).delete(delete_asset),
+            )
             .route(
                 "/assets/:asset_tag/events",
                 get(list_timeline).post(apply_event),
@@ -789,7 +966,12 @@ async fn run_search(Json(payload): Json<Value>) -> (StatusCode, Json<Value>) {
     )
 }
 
-async fn assets_list() -> Json<Value> {
+async fn assets_list(
+    State(state): State<Arc<Mutex<SharedState>>>,
+    uri: axum::http::Uri,
+) -> Json<Value> {
+    let mut guard = state.lock().unwrap();
+    guard.asset_list_uris.push(uri.to_string());
     Json(json!({"items":[]}))
 }
 
@@ -801,6 +983,28 @@ async fn get_asset(
     let mut guard = state.lock().unwrap();
     guard.asset_get_uris.push(uri.to_string());
     Json(json!({"id":id,"category_id":1000,"asset_tag":"AST-FLOW-001"}))
+}
+
+async fn update_asset(
+    State(state): State<Arc<Mutex<SharedState>>>,
+    Path(_id): Path<i64>,
+    uri: axum::http::Uri,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    let mut guard = state.lock().unwrap();
+    guard.asset_update_uris.push(uri.to_string());
+    guard.asset_update_payloads.push(payload);
+    StatusCode::NO_CONTENT
+}
+
+async fn delete_asset(
+    State(state): State<Arc<Mutex<SharedState>>>,
+    Path(_id): Path<i64>,
+    uri: axum::http::Uri,
+) -> StatusCode {
+    let mut guard = state.lock().unwrap();
+    guard.asset_delete_uris.push(uri.to_string());
+    StatusCode::NO_CONTENT
 }
 
 struct CmdOutput {
