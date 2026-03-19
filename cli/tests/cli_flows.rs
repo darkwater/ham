@@ -453,6 +453,10 @@ async fn asset_list_supports_include_deleted_query() {
     ])
     .await;
     assert!(default_out.status.success(), "stderr: {}", default_out.stderr);
+    let default_body: Value = serde_json::from_str(&default_out.stdout).unwrap();
+    assert_eq!(default_body["ok"], true);
+    assert_eq!(default_body["command"], "asset list");
+    assert!(default_body["result"]["items"].is_array());
 
     let include_deleted_out = run_cli([
         "--base-url",
@@ -469,6 +473,10 @@ async fn asset_list_supports_include_deleted_query() {
         "stderr: {}",
         include_deleted_out.stderr
     );
+    let include_deleted_body: Value = serde_json::from_str(&include_deleted_out.stdout).unwrap();
+    assert_eq!(include_deleted_body["ok"], true);
+    assert_eq!(include_deleted_body["command"], "asset list");
+    assert!(include_deleted_body["result"]["items"].is_array());
 
     let guard = server.state.lock().unwrap();
     assert_eq!(
@@ -498,6 +506,10 @@ async fn asset_update_sets_display_name() {
     ])
     .await;
     assert!(out.status.success(), "stderr: {}", out.stderr);
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["command"], "asset update");
+    assert!(body["result"].is_null());
 
     let guard = server.state.lock().unwrap();
     assert_eq!(guard.asset_update_uris, vec!["/assets/101".to_string()]);
@@ -524,6 +536,10 @@ async fn asset_update_clears_display_name() {
     ])
     .await;
     assert!(out.status.success(), "stderr: {}", out.stderr);
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["command"], "asset update");
+    assert!(body["result"].is_null());
 
     let guard = server.state.lock().unwrap();
     assert_eq!(guard.asset_update_uris, vec!["/assets/101".to_string()]);
@@ -604,6 +620,10 @@ async fn asset_delete_calls_delete_endpoint() {
     ])
     .await;
     assert!(out.status.success(), "stderr: {}", out.stderr);
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["command"], "asset delete");
+    assert!(body["result"].is_null());
 
     let guard = server.state.lock().unwrap();
     assert_eq!(guard.asset_delete_uris, vec!["/assets/101".to_string()]);

@@ -129,9 +129,6 @@ enum CliError {
         step: &'static str,
         field: &'static str,
     },
-    UnsupportedCommand {
-        command: &'static str,
-    },
 }
 
 #[derive(Serialize)]
@@ -176,19 +173,6 @@ struct CommandFailureOutput {
     ok: bool,
     command: &'static str,
     error: ErrorOutput,
-}
-
-#[derive(Serialize)]
-struct UnsupportedCommandOutput {
-    ok: bool,
-    error: UnsupportedCommandErrorOutput,
-}
-
-#[derive(Serialize)]
-struct UnsupportedCommandErrorOutput {
-    code: &'static str,
-    command: &'static str,
-    message: &'static str,
 }
 
 fn main() {
@@ -429,16 +413,6 @@ fn run_category_delete(base_url: &str, args: CategoryDeleteArgs) -> Result<Value
 
     let result = delete_by_id(&agent, base_url, "category_delete", "/categories", args.id)?;
     Ok(result.response)
-}
-
-fn asset_command_label(command: &AssetCommand) -> &'static str {
-    match command {
-        AssetCommand::Create(_) => "asset.create",
-        AssetCommand::Get(_) => "asset.get",
-        AssetCommand::List(_) => "asset.list",
-        AssetCommand::Update(_) => "asset.update",
-        AssetCommand::Delete(_) => "asset.delete",
-    }
 }
 
 fn run_scripted_core_flow(base_url: &str) -> Result<Vec<StepResult>, CliError> {
@@ -785,17 +759,6 @@ fn render_error(mode: OutputMode, err: CliError) {
                 message: format!("missing required field `{field}`"),
             },
         },
-        CliError::UnsupportedCommand { command } => {
-            match mode {
-                OutputMode::Json => {
-                    println!("{}", format_unsupported_command_json(command));
-                }
-                OutputMode::Human => {
-                    eprintln!("{}", format_unsupported_command_human(command));
-                }
-            }
-            return;
-        }
     };
 
     match mode {
@@ -846,17 +809,6 @@ fn render_command_error(mode: OutputMode, command: &'static str, err: CliError) 
             status_code: None,
             message: format!("missing required field `{field}`"),
         },
-        CliError::UnsupportedCommand { command } => {
-            match mode {
-                OutputMode::Json => {
-                    println!("{}", format_unsupported_command_json(command));
-                }
-                OutputMode::Human => {
-                    eprintln!("{}", format_unsupported_command_human(command));
-                }
-            }
-            return;
-        }
     };
 
     let body = CommandFailureOutput {
@@ -890,29 +842,6 @@ fn required_i64(
             step: step_name,
             field,
         })
-}
-
-fn unsupported_command_output(command: &'static str) -> UnsupportedCommandOutput {
-    UnsupportedCommandOutput {
-        ok: false,
-        error: UnsupportedCommandErrorOutput {
-            code: "NOT_IMPLEMENTED",
-            command,
-            message: "command is parsed but not implemented yet; use `flow scripted-core`",
-        },
-    }
-}
-
-fn format_unsupported_command_json(command: &'static str) -> String {
-    serde_json::to_string_pretty(&unsupported_command_output(command)).unwrap()
-}
-
-fn format_unsupported_command_human(command: &'static str) -> String {
-    let payload = unsupported_command_output(command);
-    format!(
-        "ERROR code={} command={} message={}",
-        payload.error.code, payload.error.command, payload.error.message
-    )
 }
 
 fn top_level_keys(value: &Value) -> String {
@@ -1234,31 +1163,20 @@ mod tests {
     }
 
     #[test]
-    fn run_command_asset_list_returns_command_error_exit_code() {
+    fn run_command_asset_update_validation_error_returns_command_error_exit_code() {
         let exit_code = super::run_command(
             OutputMode::Json,
-            "http://example.test",
+            "http://127.0.0.1:1",
             CliCommand::Asset {
-                asset: AssetCommand::List(AssetListArgs {
-                    include_deleted: false,
+                asset: AssetCommand::Update(AssetUpdateArgs {
+                    id: 101,
+                    display_name: Some("Core Router".to_string()),
+                    clear_display_name: true,
                 }),
             },
         );
 
         assert_eq!(exit_code, 1);
-    }
-
-    #[test]
-    fn unsupported_command_output_is_controlled_and_stable() {
-        let payload = super::unsupported_command_output("asset.unknown");
-
-        assert!(!payload.ok);
-        assert_eq!(payload.error.code, "NOT_IMPLEMENTED");
-        assert_eq!(payload.error.command, "asset.unknown");
-        assert_eq!(
-            payload.error.message,
-            "command is parsed but not implemented yet; use `flow scripted-core`"
-        );
     }
 
     #[tokio::test]
@@ -1343,30 +1261,4 @@ mod tests {
         panic!("server at {base_url} did not become ready in time");
     }
 
-    #[test]
-    fn render_error_json_for_non_flow_is_stable() {
-        let rendered = super::format_unsupported_command_json("category.list");
-        let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
-
-        assert_eq!(
-            parsed,
-            json!({
-                "ok": false,
-                "error": {
-                    "code": "NOT_IMPLEMENTED",
-                    "command": "category.list",
-                    "message": "command is parsed but not implemented yet; use `flow scripted-core`"
-                }
-            })
-        );
-    }
-
-    #[test]
-    fn render_error_human_for_non_flow_is_stable() {
-        let rendered = super::format_unsupported_command_human("asset.delete");
-        assert_eq!(
-            rendered,
-            "ERROR code=NOT_IMPLEMENTED command=asset.delete message=command is parsed but not implemented yet; use `flow scripted-core`"
-        );
-    }
 }
