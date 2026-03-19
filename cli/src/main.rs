@@ -1234,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    fn run_command_unsupported_returns_controlled_error_exit_code() {
+    fn run_command_asset_list_returns_command_error_exit_code() {
         let exit_code = super::run_command(
             OutputMode::Json,
             "http://example.test",
@@ -1245,7 +1245,20 @@ mod tests {
             },
         );
 
-        assert_eq!(exit_code, 2);
+        assert_eq!(exit_code, 1);
+    }
+
+    #[test]
+    fn unsupported_command_output_is_controlled_and_stable() {
+        let payload = super::unsupported_command_output("asset.unknown");
+
+        assert!(!payload.ok);
+        assert_eq!(payload.error.code, "NOT_IMPLEMENTED");
+        assert_eq!(payload.error.command, "asset.unknown");
+        assert_eq!(
+            payload.error.message,
+            "command is parsed but not implemented yet; use `flow scripted-core`"
+        );
     }
 
     #[tokio::test]
