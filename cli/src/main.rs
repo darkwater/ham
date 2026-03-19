@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -30,6 +30,14 @@ enum CliCommand {
         #[command(subcommand)]
         flow: FlowCommand,
     },
+    Category {
+        #[command(subcommand)]
+        category: CategoryCommand,
+    },
+    Asset {
+        #[command(subcommand)]
+        asset: AssetCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -38,11 +46,83 @@ enum FlowCommand {
     ScriptedCore,
 }
 
+#[derive(Debug, Subcommand)]
+enum CategoryCommand {
+    Create(CategoryCreateArgs),
+    List,
+    Delete(CategoryDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct CategoryCreateArgs {
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    parent_id: Option<i64>,
+}
+
+#[derive(Debug, Args)]
+struct CategoryDeleteArgs {
+    #[arg(long)]
+    id: i64,
+}
+
+#[derive(Debug, Subcommand)]
+enum AssetCommand {
+    Create(AssetCreateArgs),
+    Get(AssetGetArgs),
+    List(AssetListArgs),
+    Update(AssetUpdateArgs),
+    Delete(AssetDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct AssetCreateArgs {
+    #[arg(long)]
+    category_id: i64,
+    #[arg(long)]
+    asset_tag: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct AssetGetArgs {
+    #[arg(long)]
+    id: i64,
+    #[arg(long)]
+    include_deleted: bool,
+}
+
+#[derive(Debug, Args)]
+struct AssetListArgs {
+    #[arg(long)]
+    include_deleted: bool,
+}
+
+#[derive(Debug, Args)]
+struct AssetUpdateArgs {
+    #[arg(long)]
+    id: i64,
+    #[arg(long)]
+    display_name: Option<String>,
+    #[arg(long)]
+    clear_display_name: bool,
+}
+
+#[derive(Debug, Args)]
+struct AssetDeleteArgs {
+    #[arg(long)]
+    id: i64,
+}
+
 #[derive(Debug)]
 enum CliError {
     Http {
         step: &'static str,
         status_code: Option<u16>,
+        message: String,
+    },
+    Validation {
+        step: &'static str,
         message: String,
     },
     MissingField {
@@ -81,6 +161,13 @@ struct FailureOutput {
     error: ErrorOutput,
 }
 
+#[derive(Serialize)]
+struct CommandFailureOutput {
+    ok: bool,
+    command: &'static str,
+    error: ErrorOutput,
+}
+
 fn main() {
     let _ = domain::domain_ready();
 
@@ -89,19 +176,225 @@ fn main() {
     let mode = cli.output;
     let base_url = cli.base_url;
 
-    match cli.command {
+    let exit_code = run_command(mode, &base_url, cli.command);
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+}
+
+fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
+    match command {
         CliCommand::Flow {
             flow: FlowCommand::ScriptedCore,
-        } => {}
+        } => match run_scripted_core_flow(&base_url) {
+            Ok(steps) => {
+                render_success(mode, steps);
+                0
+            }
+            Err(err) => {
+                render_error(mode, err);
+                1
+            }
+        },
+        CliCommand::Category { category } => match category {
+            CategoryCommand::Create(args) => match run_category_create(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "category create", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "category create", err);
+                    1
+                }
+            },
+            CategoryCommand::List => match run_category_list(base_url) {
+                Ok(result) => {
+                    render_command_success(mode, "category list", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "category list", err);
+                    1
+                }
+            },
+            CategoryCommand::Delete(args) => match run_category_delete(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "category delete", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "category delete", err);
+                    1
+                }
+            },
+        },
+        CliCommand::Asset { asset } => match asset {
+            AssetCommand::Create(args) => match run_asset_create(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset create", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset create", err);
+                    1
+                }
+            },
+            AssetCommand::Get(args) => match run_asset_get(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset get", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset get", err);
+                    1
+                }
+            },
+            AssetCommand::List(args) => match run_asset_list(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset list", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset list", err);
+                    1
+                }
+            },
+            AssetCommand::Update(args) => match run_asset_update(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset update", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset update", err);
+                    1
+                }
+            },
+            AssetCommand::Delete(args) => match run_asset_delete(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset delete", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset delete", err);
+                    1
+                }
+            },
+        },
+    }
+}
+
+fn run_asset_create(base_url: &str, args: AssetCreateArgs) -> Result<StepResult, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let body = match args.asset_tag {
+        Some(asset_tag) => json!({"category_id": args.category_id, "asset_tag": asset_tag}),
+        None => json!({"category_id": args.category_id}),
+    };
+
+    post(&agent, base_url, "asset_create", "/assets", body)
+}
+
+fn run_asset_get(base_url: &str, args: AssetGetArgs) -> Result<StepResult, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let mut path = format!("/assets/{}", args.id);
+    if args.include_deleted {
+        path.push_str("?include_deleted=true");
     }
 
-    match run_scripted_core_flow(&base_url) {
-        Ok(steps) => render_success(mode, steps),
-        Err(err) => {
-            render_error(mode, err);
-            std::process::exit(1);
-        }
+    get(&agent, base_url, "asset_get", &path)
+}
+
+fn run_asset_list(base_url: &str, args: AssetListArgs) -> Result<StepResult, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let mut path = String::from("/assets");
+    if args.include_deleted {
+        path.push_str("?include_deleted=true");
     }
+
+    get(&agent, base_url, "asset_list", &path)
+}
+
+fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<StepResult, CliError> {
+    if args.display_name.is_some() && args.clear_display_name {
+        return Err(CliError::Validation {
+            step: "asset_update",
+            message: "--display-name and --clear-display-name cannot be used together".to_string(),
+        });
+    }
+
+    let body = if let Some(display_name) = args.display_name {
+        json!({"display_name": display_name})
+    } else if args.clear_display_name {
+        json!({"clear_display_name": true})
+    } else {
+        return Err(CliError::Validation {
+            step: "asset_update",
+            message:
+                "at least one update field is required (--display-name or --clear-display-name)"
+                    .to_string(),
+        });
+    };
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let path = format!("/assets/{}", args.id);
+    patch(&agent, base_url, "asset_update", &path, body)
+}
+
+fn run_asset_delete(base_url: &str, args: AssetDeleteArgs) -> Result<StepResult, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    delete_by_id(&agent, base_url, "asset_delete", "/assets", args.id)
+}
+
+fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<StepResult, CliError> {
+    let name = args.name.trim();
+    if name.is_empty() {
+        return Err(CliError::Validation {
+            step: "category_create",
+            message: "name must not be blank".to_string(),
+        });
+    }
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let body = match args.parent_id {
+        Some(parent_category_id) => {
+            json!({"name": name, "parent_category_id": parent_category_id})
+        }
+        None => json!({"name": name}),
+    };
+
+    post(&agent, base_url, "category_create", "/categories", body)
+}
+
+fn run_category_list(base_url: &str) -> Result<StepResult, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    get(&agent, base_url, "category_list", "/categories")
+}
+
+fn run_category_delete(base_url: &str, args: CategoryDeleteArgs) -> Result<StepResult, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    delete_by_id(&agent, base_url, "category_delete", "/categories", args.id)
 }
 
 fn run_scripted_core_flow(base_url: &str) -> Result<Vec<StepResult>, CliError> {
@@ -304,6 +597,74 @@ fn get(
     }
 }
 
+fn patch(
+    agent: &ureq::Agent,
+    base_url: &str,
+    action: &'static str,
+    path: &str,
+    body: Value,
+) -> Result<StepResult, CliError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    match agent
+        .request("PATCH", &url)
+        .set("content-type", "application/json")
+        .send_string(&body.to_string())
+    {
+        Ok(resp) => Ok(StepResult {
+            action,
+            status_code: resp.status(),
+            response: parse_response_body(resp),
+        }),
+        Err(ureq::Error::Status(status, resp)) => Err(CliError::Http {
+            step: action,
+            status_code: Some(status),
+            message: parse_response_body(resp).to_string(),
+        }),
+        Err(err) => Err(CliError::Http {
+            step: action,
+            status_code: None,
+            message: err.to_string(),
+        }),
+    }
+}
+
+fn delete_by_id(
+    agent: &ureq::Agent,
+    base_url: &str,
+    action: &'static str,
+    collection_path: &str,
+    id: i64,
+) -> Result<StepResult, CliError> {
+    let path = format!("{}/{}", collection_path.trim_end_matches('/'), id);
+    delete(agent, base_url, action, &path)
+}
+
+fn delete(
+    agent: &ureq::Agent,
+    base_url: &str,
+    action: &'static str,
+    path: &str,
+) -> Result<StepResult, CliError> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    match agent.delete(&url).call() {
+        Ok(resp) => Ok(StepResult {
+            action,
+            status_code: resp.status(),
+            response: parse_response_body(resp),
+        }),
+        Err(ureq::Error::Status(status, resp)) => Err(CliError::Http {
+            step: action,
+            status_code: Some(status),
+            message: parse_response_body(resp).to_string(),
+        }),
+        Err(err) => Err(CliError::Http {
+            step: action,
+            status_code: None,
+            message: err.to_string(),
+        }),
+    }
+}
+
 fn parse_response_body(resp: ureq::Response) -> Value {
     use std::io::Read;
     let mut s = String::new();
@@ -360,6 +721,16 @@ fn render_error(mode: OutputMode, err: CliError) {
                 message,
             },
         },
+        CliError::Validation { step, message } => FailureOutput {
+            ok: false,
+            flow: "scripted-core",
+            error: ErrorOutput {
+                code: "VALIDATION_ERROR",
+                step,
+                status_code: None,
+                message,
+            },
+        },
         CliError::MissingField { step, field } => FailureOutput {
             ok: false,
             flow: "scripted-core",
@@ -377,6 +748,89 @@ fn render_error(mode: OutputMode, err: CliError) {
         OutputMode::Human => eprintln!(
             "ERROR code={} step={} status={:?} message={}",
             body.error.code, body.error.step, body.error.status_code, body.error.message
+        ),
+    }
+}
+
+fn render_command_success(mode: OutputMode, command: &'static str, result: StepResult) {
+    match mode {
+        OutputMode::Json => {
+            if result.status_code == 204 {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &json!({"ok": true, "status_code": 204, "response": null})
+                    )
+                    .unwrap()
+                );
+            } else {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result.response).unwrap()
+                );
+            }
+        }
+        OutputMode::Human => {
+            if result.status_code == 204 {
+                println!("OK status=204");
+            } else if command.ends_with(" list") {
+                let items = result
+                    .response
+                    .get("items")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                for item in items {
+                    println!("{}", summarize_human_line(&item));
+                }
+            } else {
+                println!("{}", summarize_human_line(&result.response));
+            }
+        }
+    }
+}
+
+fn render_command_error(mode: OutputMode, command: &'static str, err: CliError) {
+    let error = match err {
+        CliError::Http {
+            step,
+            status_code,
+            message,
+        } => ErrorOutput {
+            code: "HTTP_ERROR",
+            step,
+            status_code,
+            message,
+        },
+        CliError::Validation { step, message } => ErrorOutput {
+            code: "VALIDATION_ERROR",
+            step,
+            status_code: None,
+            message,
+        },
+        CliError::MissingField { step, field } => ErrorOutput {
+            code: "INVALID_RESPONSE",
+            step,
+            status_code: None,
+            message: format!("missing required field `{field}`"),
+        },
+    };
+
+    let body = CommandFailureOutput {
+        ok: false,
+        command,
+        error,
+    };
+
+    match mode {
+        OutputMode::Json => println!("{}", serde_json::to_string_pretty(&body).unwrap()),
+        OutputMode::Human => eprintln!(
+            "ERROR command={} code={} step={} status={:?} message={}",
+            body.command,
+            body.error.code,
+            body.error.step,
+            body.error.status_code,
+            body.error.message
         ),
     }
 }
@@ -406,10 +860,46 @@ fn top_level_keys(value: &Value) -> String {
         .unwrap_or_default()
 }
 
+fn summarize_human_line(value: &Value) -> String {
+    if let Some(map) = value.as_object() {
+        let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let parts: Vec<String> = keys
+            .into_iter()
+            .map(|key| format!("{key}={}", compact_json_value(&map[key])))
+            .collect();
+        if parts.is_empty() {
+            "OK".to_string()
+        } else {
+            format!("OK {}", parts.join(" "))
+        }
+    } else {
+        format!("OK value={}", compact_json_value(value))
+    }
+}
+
+fn compact_json_value(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CliArgs, CliCommand, FlowCommand, OutputMode};
+    use super::{
+        AssetCommand, AssetCreateArgs, AssetDeleteArgs, AssetGetArgs, AssetListArgs,
+        AssetUpdateArgs, CategoryCommand, CategoryCreateArgs, CategoryDeleteArgs, CliArgs,
+        CliCommand, FlowCommand, OutputMode,
+    };
+    use axum::{
+        extract::Path,
+        routing::{delete, get},
+        Json, Router,
+    };
     use clap::{error::ErrorKind, Parser};
+    use serde_json::json;
+    use tokio::{net::TcpListener, time::Duration};
 
     #[test]
     fn parse_supports_help_flag() {
@@ -444,5 +934,364 @@ mod tests {
                 flow: FlowCommand::ScriptedCore
             }
         ));
+    }
+
+    #[test]
+    fn parse_category_create_with_parent_id() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "category",
+            "create",
+            "--name",
+            "Servers",
+            "--parent-id",
+            "10",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Category {
+                category: CategoryCommand::Create(CategoryCreateArgs {
+                    name,
+                    parent_id: Some(10)
+                })
+            } if name == "Servers"
+        ));
+    }
+
+    #[test]
+    fn parse_category_create_rejects_non_numeric_parent_id() {
+        let err = CliArgs::try_parse_from([
+            "cli",
+            "category",
+            "create",
+            "--name",
+            "Servers",
+            "--parent-id",
+            "not-a-number",
+        ])
+        .unwrap_err();
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("--parent-id"));
+        assert!(rendered.contains("not-a-number"));
+    }
+
+    #[test]
+    fn parse_category_list() {
+        let parsed = CliArgs::try_parse_from(["cli", "category", "list"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Category {
+                category: CategoryCommand::List
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_category_delete() {
+        let parsed = CliArgs::try_parse_from(["cli", "category", "delete", "--id", "42"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Category {
+                category: CategoryCommand::Delete(CategoryDeleteArgs { id: 42 })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_category_delete_rejects_positional_id() {
+        let err = CliArgs::try_parse_from(["cli", "category", "delete", "42"]).unwrap_err();
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("42"));
+        assert!(rendered.contains("--id"));
+    }
+
+    #[test]
+    fn parse_asset_create() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "create",
+            "--category-id",
+            "3",
+            "--asset-tag",
+            "AST-100",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Create(AssetCreateArgs {
+                    category_id: 3,
+                    asset_tag: Some(asset_tag)
+                })
+            } if asset_tag == "AST-100"
+        ));
+    }
+
+    #[test]
+    fn parse_asset_create_without_optional_asset_tag() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "create", "--category-id", "3"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Create(AssetCreateArgs {
+                    category_id: 3,
+                    asset_tag: None
+                })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_create_rejects_display_name() {
+        let err = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "create",
+            "--category-id",
+            "3",
+            "--display-name",
+            "Core Router",
+        ])
+        .unwrap_err();
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("--display-name"));
+    }
+
+    #[test]
+    fn parse_asset_get_with_include_deleted() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "get", "--id", "9", "--include-deleted"])
+                .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Get(AssetGetArgs {
+                    id: 9,
+                    include_deleted: true
+                })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_get_rejects_positional_id() {
+        let err = CliArgs::try_parse_from(["cli", "asset", "get", "9"]).unwrap_err();
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("9"));
+        assert!(rendered.contains("--id"));
+    }
+
+    #[test]
+    fn parse_asset_list_with_include_deleted() {
+        let parsed =
+            CliArgs::try_parse_from(["cli", "asset", "list", "--include-deleted"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::List(AssetListArgs {
+                    include_deleted: true
+                })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_update_display_name() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "update",
+            "--id",
+            "9",
+            "--display-name",
+            "Core Router",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Update(AssetUpdateArgs {
+                    id: 9,
+                    display_name: Some(name),
+                    clear_display_name: false
+                })
+            } if name == "Core Router"
+        ));
+    }
+
+    #[test]
+    fn parse_asset_update_clear_display_name() {
+        let parsed = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "update",
+            "--id",
+            "9",
+            "--clear-display-name",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Update(AssetUpdateArgs {
+                    id: 9,
+                    display_name: None,
+                    clear_display_name: true
+                })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_update_rejects_positional_id() {
+        let err = CliArgs::try_parse_from([
+            "cli",
+            "asset",
+            "update",
+            "9",
+            "--display-name",
+            "Core Router",
+        ])
+        .unwrap_err();
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("9"));
+        assert!(rendered.contains("--id"));
+    }
+
+    #[test]
+    fn parse_asset_delete() {
+        let parsed = CliArgs::try_parse_from(["cli", "asset", "delete", "--id", "9"]).unwrap();
+
+        assert!(matches!(
+            parsed.command,
+            CliCommand::Asset {
+                asset: AssetCommand::Delete(AssetDeleteArgs { id: 9 })
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_asset_delete_rejects_positional_id() {
+        let err = CliArgs::try_parse_from(["cli", "asset", "delete", "9"]).unwrap_err();
+
+        let rendered = err.to_string();
+        assert!(rendered.contains("9"));
+        assert!(rendered.contains("--id"));
+    }
+
+    #[test]
+    fn run_command_asset_update_validation_error_returns_command_error_exit_code() {
+        let exit_code = super::run_command(
+            OutputMode::Json,
+            "http://127.0.0.1:1",
+            CliCommand::Asset {
+                asset: AssetCommand::Update(AssetUpdateArgs {
+                    id: 101,
+                    display_name: Some("Core Router".to_string()),
+                    clear_display_name: true,
+                }),
+            },
+        );
+
+        assert_eq!(exit_code, 1);
+    }
+
+    #[tokio::test]
+    async fn category_list_gets_categories() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{addr}");
+
+        let app = Router::new().route(
+            "/categories",
+            get(|| async {
+                Json(json!({
+                    "items": [
+                        {"id": 1, "name": "Network", "parent_category_id": null}
+                    ]
+                }))
+            }),
+        );
+
+        let _join = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        wait_for_server(&base_url).await;
+
+        let exit_code = tokio::task::spawn_blocking(move || {
+            super::run_command(
+                OutputMode::Json,
+                &base_url,
+                CliCommand::Category {
+                    category: CategoryCommand::List,
+                },
+            )
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn category_delete_calls_delete_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{addr}");
+
+        let app = Router::new().route(
+            "/categories/:id",
+            delete(|Path(id): Path<i64>| async move {
+                assert_eq!(id, 42);
+                Json(json!({"ok": true}))
+            }),
+        );
+
+        let _join = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        wait_for_server(&base_url).await;
+
+        let exit_code = tokio::task::spawn_blocking(move || {
+            super::run_command(
+                OutputMode::Json,
+                &base_url,
+                CliCommand::Category {
+                    category: CategoryCommand::Delete(CategoryDeleteArgs { id: 42 }),
+                },
+            )
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(exit_code, 0);
+    }
+
+    async fn wait_for_server(base_url: &str) {
+        let host = base_url.trim_start_matches("http://");
+        for _ in 0..50 {
+            if std::net::TcpStream::connect(host).is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("server at {base_url} did not become ready in time");
     }
 }
