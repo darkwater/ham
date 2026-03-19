@@ -228,60 +228,58 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
                 }
             },
         },
-        CliCommand::Asset { asset } => {
-            match asset {
-                AssetCommand::Create(args) => match run_asset_create(base_url, args) {
-                    Ok(result) => {
-                        render_command_success(mode, "asset create", result);
-                        0
-                    }
-                    Err(err) => {
-                        render_command_error(mode, "asset create", err);
-                        1
-                    }
-                },
-                AssetCommand::Get(args) => match run_asset_get(base_url, args) {
-                    Ok(result) => {
-                        render_command_success(mode, "asset get", result);
-                        0
-                    }
-                    Err(err) => {
-                        render_command_error(mode, "asset get", err);
-                        1
-                    }
-                },
-                AssetCommand::List(args) => match run_asset_list(base_url, args) {
-                    Ok(result) => {
-                        render_command_success(mode, "asset list", result);
-                        0
-                    }
-                    Err(err) => {
-                        render_command_error(mode, "asset list", err);
-                        1
-                    }
-                },
-                AssetCommand::Update(args) => match run_asset_update(base_url, args) {
-                    Ok(result) => {
-                        render_command_success(mode, "asset update", result);
-                        0
-                    }
-                    Err(err) => {
-                        render_command_error(mode, "asset update", err);
-                        1
-                    }
-                },
-                AssetCommand::Delete(args) => match run_asset_delete(base_url, args) {
-                    Ok(result) => {
-                        render_command_success(mode, "asset delete", result);
-                        0
-                    }
-                    Err(err) => {
-                        render_command_error(mode, "asset delete", err);
-                        1
-                    }
-                },
-            }
-        }
+        CliCommand::Asset { asset } => match asset {
+            AssetCommand::Create(args) => match run_asset_create(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset create", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset create", err);
+                    1
+                }
+            },
+            AssetCommand::Get(args) => match run_asset_get(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset get", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset get", err);
+                    1
+                }
+            },
+            AssetCommand::List(args) => match run_asset_list(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset list", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset list", err);
+                    1
+                }
+            },
+            AssetCommand::Update(args) => match run_asset_update(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset update", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset update", err);
+                    1
+                }
+            },
+            AssetCommand::Delete(args) => match run_asset_delete(base_url, args) {
+                Ok(result) => {
+                    render_command_success(mode, "asset delete", result);
+                    0
+                }
+                Err(err) => {
+                    render_command_error(mode, "asset delete", err);
+                    1
+                }
+            },
+        },
     }
 }
 
@@ -328,8 +326,7 @@ fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<StepResult,
     if args.display_name.is_some() && args.clear_display_name {
         return Err(CliError::Validation {
             step: "asset_update",
-            message: "--display-name and --clear-display-name cannot be used together"
-                .to_string(),
+            message: "--display-name and --clear-display-name cannot be used together".to_string(),
         });
     }
 
@@ -340,8 +337,9 @@ fn run_asset_update(base_url: &str, args: AssetUpdateArgs) -> Result<StepResult,
     } else {
         return Err(CliError::Validation {
             step: "asset_update",
-            message: "at least one update field is required (--display-name or --clear-display-name)"
-                .to_string(),
+            message:
+                "at least one update field is required (--display-name or --clear-display-name)"
+                    .to_string(),
         });
     };
 
@@ -766,7 +764,10 @@ fn render_command_success(mode: OutputMode, command: &'static str, result: StepR
                     .unwrap()
                 );
             } else {
-                println!("{}", serde_json::to_string_pretty(&result.response).unwrap());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result.response).unwrap()
+                );
             }
         }
         OutputMode::Human => {
@@ -891,7 +892,11 @@ mod tests {
         AssetUpdateArgs, CategoryCommand, CategoryCreateArgs, CategoryDeleteArgs, CliArgs,
         CliCommand, FlowCommand, OutputMode,
     };
-    use axum::{extract::Path, routing::{delete, get}, Json, Router};
+    use axum::{
+        extract::Path,
+        routing::{delete, get},
+        Json, Router,
+    };
     use clap::{error::ErrorKind, Parser};
     use serde_json::json;
     use tokio::{net::TcpListener, time::Duration};
@@ -1289,5 +1294,4 @@ mod tests {
         }
         panic!("server at {base_url} did not become ready in time");
     }
-
 }

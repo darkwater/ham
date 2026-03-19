@@ -129,6 +129,66 @@ async fn category_create_http_error_uses_command_error_envelope() {
 }
 
 #[tokio::test]
+async fn category_create_error_step_name_is_category_create() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "invalid",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "category_create");
+}
+
+#[tokio::test]
+async fn category_list_error_step_name_is_category_list() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "category",
+        "list",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "category_list");
+}
+
+#[tokio::test]
+async fn category_delete_error_step_name_is_category_delete() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "category",
+        "delete",
+        "--id",
+        "42",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "category_delete");
+}
+
+#[tokio::test]
 async fn category_create_posts_expected_payload() {
     let server = StubServer::start(StubConfig::default()).await;
 
@@ -189,7 +249,10 @@ async fn category_create_accepts_contract_valid_payload_shape() {
     assert!(out.status.success(), "stderr: {}", out.stderr);
 
     let guard = server.state.lock().unwrap();
-    assert_eq!(guard.category_create_payloads, vec![json!({"name":"Telemetry"})]);
+    assert_eq!(
+        guard.category_create_payloads,
+        vec![json!({"name":"Telemetry"})]
+    );
 }
 
 #[tokio::test]
@@ -206,7 +269,8 @@ async fn create_category_stub_rejects_non_contract_payload_shape() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    let (status, _) = create_category(State(state), Json(json!({"name":"Telemetry","extra":true}))).await;
+    let (status, _) =
+        create_category(State(state), Json(json!({"name":"Telemetry","extra":true}))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -263,7 +327,15 @@ async fn category_create_and_list_succeeds_against_real_server_app() {
         create_out.stdout
     );
 
-    let list_out = run_cli(["--base-url", &base_url, "--output", "json", "category", "list"]).await;
+    let list_out = run_cli([
+        "--base-url",
+        &base_url,
+        "--output",
+        "json",
+        "category",
+        "list",
+    ])
+    .await;
     assert!(
         list_out.status.success(),
         "stderr: {}\nstdout: {}",
@@ -328,9 +400,20 @@ async fn category_create_and_delete_succeeds_against_real_server_app() {
     );
 
     let delete_body: Value = serde_json::from_str(&delete_out.stdout).unwrap();
-    assert_eq!(delete_body, json!({"ok":true,"status_code":204,"response":null}));
+    assert_eq!(
+        delete_body,
+        json!({"ok":true,"status_code":204,"response":null})
+    );
 
-    let list_out = run_cli(["--base-url", &base_url, "--output", "json", "category", "list"]).await;
+    let list_out = run_cli([
+        "--base-url",
+        &base_url,
+        "--output",
+        "json",
+        "category",
+        "list",
+    ])
+    .await;
     assert!(
         list_out.status.success(),
         "stderr: {}\nstdout: {}",
@@ -372,7 +455,11 @@ async fn asset_create_posts_expected_payload() {
         "12",
     ])
     .await;
-    assert!(untagged_out.status.success(), "stderr: {}", untagged_out.stderr);
+    assert!(
+        untagged_out.status.success(),
+        "stderr: {}",
+        untagged_out.stderr
+    );
 
     let guard = server.state.lock().unwrap();
     assert_eq!(
@@ -382,12 +469,30 @@ async fn asset_create_posts_expected_payload() {
             json!({"category_id":12})
         ]
     );
-    assert!(
-        guard
-            .asset_create_payloads
-            .iter()
-            .all(|payload| payload.get("display_name").is_none())
-    );
+    assert!(guard
+        .asset_create_payloads
+        .iter()
+        .all(|payload| payload.get("display_name").is_none()));
+}
+
+#[tokio::test]
+async fn asset_create_error_step_name_is_asset_create() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "create",
+        "--category-id",
+        "11",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "asset_create");
 }
 
 #[tokio::test]
@@ -405,7 +510,11 @@ async fn asset_get_appends_include_deleted_query_when_set() {
         "101",
     ])
     .await;
-    assert!(default_out.status.success(), "stderr: {}", default_out.stderr);
+    assert!(
+        default_out.status.success(),
+        "stderr: {}",
+        default_out.stderr
+    );
 
     let include_deleted_out = run_cli([
         "--base-url",
@@ -436,6 +545,26 @@ async fn asset_get_appends_include_deleted_query_when_set() {
 }
 
 #[tokio::test]
+async fn asset_get_error_step_name_is_asset_get() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "get",
+        "--id",
+        "101",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "asset_get");
+}
+
+#[tokio::test]
 async fn asset_list_supports_include_deleted_query() {
     let server = StubServer::start(StubConfig::default()).await;
 
@@ -448,7 +577,11 @@ async fn asset_list_supports_include_deleted_query() {
         "list",
     ])
     .await;
-    assert!(default_out.status.success(), "stderr: {}", default_out.stderr);
+    assert!(
+        default_out.status.success(),
+        "stderr: {}",
+        default_out.stderr
+    );
     let default_body: Value = serde_json::from_str(&default_out.stdout).unwrap();
     assert!(default_body["items"].is_array());
 
@@ -481,6 +614,24 @@ async fn asset_list_supports_include_deleted_query() {
 }
 
 #[tokio::test]
+async fn asset_list_error_step_name_is_asset_list() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "list",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "asset_list");
+}
+
+#[tokio::test]
 async fn asset_update_sets_display_name() {
     let server = StubServer::start(StubConfig::default()).await;
 
@@ -507,6 +658,28 @@ async fn asset_update_sets_display_name() {
         guard.asset_update_payloads,
         vec![json!({"display_name":"Core Router"})]
     );
+}
+
+#[tokio::test]
+async fn asset_update_error_step_name_is_asset_update() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "update",
+        "--id",
+        "101",
+        "--display-name",
+        "Core Router",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "asset_update");
 }
 
 #[tokio::test]
@@ -703,6 +876,60 @@ async fn human_output_no_content_prints_ok_status_204() {
 }
 
 #[tokio::test]
+async fn human_error_output_http_failure_is_one_line() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "human",
+        "asset",
+        "list",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    assert!(out.stdout.trim().is_empty(), "stdout: {}", out.stdout);
+
+    let lines: Vec<&str> = out
+        .stderr
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    assert_eq!(lines.len(), 1, "stderr: {}", out.stderr);
+    assert!(lines[0].contains("ERROR command=asset list"));
+    assert!(lines[0].contains("code=HTTP_ERROR"));
+    assert!(lines[0].contains("step=asset_list"));
+}
+
+#[tokio::test]
+async fn human_error_output_validation_failure_is_one_line() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "human",
+        "asset",
+        "update",
+        "--id",
+        "101",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    assert!(out.stdout.trim().is_empty(), "stdout: {}", out.stdout);
+
+    let lines: Vec<&str> = out
+        .stderr
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    assert_eq!(lines.len(), 1, "stderr: {}", out.stderr);
+    assert!(lines[0].contains("ERROR command=asset update"));
+    assert!(lines[0].contains("code=VALIDATION_ERROR"));
+    assert!(lines[0].contains("step=asset_update"));
+}
+
+#[tokio::test]
 async fn asset_update_clears_display_name() {
     let server = StubServer::start(StubConfig::default()).await;
 
@@ -806,6 +1033,26 @@ async fn asset_delete_calls_delete_endpoint() {
 
     let guard = server.state.lock().unwrap();
     assert_eq!(guard.asset_delete_uris, vec!["/assets/101".to_string()]);
+}
+
+#[tokio::test]
+async fn asset_delete_error_step_name_is_asset_delete() {
+    let out = run_cli([
+        "--base-url",
+        "http://127.0.0.1:1",
+        "--output",
+        "json",
+        "asset",
+        "delete",
+        "--id",
+        "101",
+    ])
+    .await;
+
+    assert!(!out.status.success());
+    let body: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(body["error"]["code"], "HTTP_ERROR");
+    assert_eq!(body["error"]["step"], "asset_delete");
 }
 
 #[tokio::test]
