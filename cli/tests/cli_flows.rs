@@ -279,6 +279,74 @@ async fn category_create_and_list_succeeds_against_real_server_app() {
 }
 
 #[tokio::test]
+async fn category_create_and_delete_succeeds_against_real_server_app() {
+    let db_file = tempfile::NamedTempFile::new().unwrap();
+    let app = server::app::build_app(db_file.path().to_path_buf()).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    let _join = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let create_out = run_cli([
+        "--base-url",
+        &base_url,
+        "--output",
+        "json",
+        "category",
+        "create",
+        "--name",
+        "Delete Me",
+    ])
+    .await;
+    assert!(
+        create_out.status.success(),
+        "stderr: {}\nstdout: {}",
+        create_out.stderr,
+        create_out.stdout
+    );
+
+    let create_body: Value = serde_json::from_str(&create_out.stdout).unwrap();
+    let category_id = create_body["result"]["id"].as_i64().unwrap();
+
+    let delete_out = run_cli([
+        "--base-url",
+        &base_url,
+        "--output",
+        "json",
+        "category",
+        "delete",
+        "--id",
+        &category_id.to_string(),
+    ])
+    .await;
+    assert!(
+        delete_out.status.success(),
+        "stderr: {}\nstdout: {}",
+        delete_out.stderr,
+        delete_out.stdout
+    );
+
+    let delete_body: Value = serde_json::from_str(&delete_out.stdout).unwrap();
+    assert_eq!(delete_body["ok"], true);
+    assert_eq!(delete_body["command"], "category delete");
+    assert!(delete_body["result"].is_null());
+
+    let list_out = run_cli(["--base-url", &base_url, "--output", "json", "category", "list"]).await;
+    assert!(
+        list_out.status.success(),
+        "stderr: {}\nstdout: {}",
+        list_out.stderr,
+        list_out.stdout
+    );
+
+    let list_body: Value = serde_json::from_str(&list_out.stdout).unwrap();
+    assert_eq!(list_body["result"]["items"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn scripted_core_flow_succeeds_against_real_server_app() {
     let db_file = tempfile::NamedTempFile::new().unwrap();
     let app = server::app::build_app(db_file.path().to_path_buf()).unwrap();
