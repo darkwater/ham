@@ -252,15 +252,67 @@ fn run_command(mode: OutputMode, base_url: &str, command: CliCommand) -> i32 {
             },
         },
         CliCommand::Asset { asset } => {
-            render_error(
-                mode,
-                CliError::UnsupportedCommand {
-                    command: asset_command_label(&asset),
+            match asset {
+                AssetCommand::Create(args) => match run_asset_create(base_url, args) {
+                    Ok(result) => {
+                        render_command_success(mode, "asset create", result);
+                        0
+                    }
+                    Err(err) => {
+                        render_command_error(mode, "asset create", err);
+                        1
+                    }
                 },
-            );
-            2
+                AssetCommand::Get(args) => match run_asset_get(base_url, args) {
+                    Ok(result) => {
+                        render_command_success(mode, "asset get", result);
+                        0
+                    }
+                    Err(err) => {
+                        render_command_error(mode, "asset get", err);
+                        1
+                    }
+                },
+                _ => {
+                    render_error(
+                        mode,
+                        CliError::UnsupportedCommand {
+                            command: asset_command_label(&asset),
+                        },
+                    );
+                    2
+                }
+            }
         }
     }
+}
+
+fn run_asset_create(base_url: &str, args: AssetCreateArgs) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let body = match args.asset_tag {
+        Some(asset_tag) => json!({"category_id": args.category_id, "asset_tag": asset_tag}),
+        None => json!({"category_id": args.category_id}),
+    };
+
+    let result = post(&agent, base_url, "asset_create", "/assets", body)?;
+    Ok(result.response)
+}
+
+fn run_asset_get(base_url: &str, args: AssetGetArgs) -> Result<Value, CliError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+
+    let mut path = format!("/assets/{}", args.id);
+    if args.include_deleted {
+        path.push_str("?include_deleted=true");
+    }
+
+    let result = get(&agent, base_url, "asset_get", &path)?;
+    Ok(result.response)
 }
 
 fn run_category_create(base_url: &str, args: CategoryCreateArgs) -> Result<Value, CliError> {

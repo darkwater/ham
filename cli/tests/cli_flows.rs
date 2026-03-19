@@ -347,6 +347,99 @@ async fn category_create_and_delete_succeeds_against_real_server_app() {
 }
 
 #[tokio::test]
+async fn asset_create_posts_expected_payload() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let tagged_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "create",
+        "--category-id",
+        "11",
+        "--asset-tag",
+        "AST-11",
+    ])
+    .await;
+    assert!(tagged_out.status.success(), "stderr: {}", tagged_out.stderr);
+
+    let untagged_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "create",
+        "--category-id",
+        "12",
+    ])
+    .await;
+    assert!(untagged_out.status.success(), "stderr: {}", untagged_out.stderr);
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(
+        guard.asset_create_payloads,
+        vec![
+            json!({"category_id":11,"asset_tag":"AST-11"}),
+            json!({"category_id":12})
+        ]
+    );
+    assert!(
+        guard
+            .asset_create_payloads
+            .iter()
+            .all(|payload| payload.get("display_name").is_none())
+    );
+}
+
+#[tokio::test]
+async fn asset_get_appends_include_deleted_query_when_set() {
+    let server = StubServer::start(StubConfig::default()).await;
+
+    let default_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "get",
+        "--id",
+        "101",
+    ])
+    .await;
+    assert!(default_out.status.success(), "stderr: {}", default_out.stderr);
+
+    let include_deleted_out = run_cli([
+        "--base-url",
+        &server.base_url,
+        "--output",
+        "json",
+        "asset",
+        "get",
+        "--id",
+        "101",
+        "--include-deleted",
+    ])
+    .await;
+    assert!(
+        include_deleted_out.status.success(),
+        "stderr: {}",
+        include_deleted_out.stderr
+    );
+
+    let guard = server.state.lock().unwrap();
+    assert_eq!(
+        guard.asset_get_uris,
+        vec![
+            "/assets/101".to_string(),
+            "/assets/101?include_deleted=true".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
 async fn scripted_core_flow_succeeds_against_real_server_app() {
     let db_file = tempfile::NamedTempFile::new().unwrap();
     let app = server::app::build_app(db_file.path().to_path_buf()).unwrap();
@@ -411,6 +504,8 @@ struct SharedState {
     last_asset_category_id: Option<i64>,
     last_idempotency_key: Option<String>,
     category_create_payloads: Vec<Value>,
+    asset_create_payloads: Vec<Value>,
+    asset_get_uris: Vec<String>,
 }
 
 struct StubServer {
@@ -434,6 +529,7 @@ impl StubServer {
             .route("/external-entities", post(create_external_entity))
             .route("/event-types", post(create_event_type))
             .route("/assets", get(assets_list).post(create_asset))
+            .route("/assets/:id", get(get_asset))
             .route(
                 "/assets/:asset_tag/events",
                 get(list_timeline).post(apply_event),
@@ -619,6 +715,7 @@ async fn create_asset(
         .unwrap_or_default();
 
     let mut guard = state.lock().unwrap();
+    guard.asset_create_payloads.push(payload.clone());
     guard.last_asset_category_id = Some(category_id);
 
     if guard.config.unwrap().fail_on_wrong_asset_category
@@ -694,6 +791,16 @@ async fn run_search(Json(payload): Json<Value>) -> (StatusCode, Json<Value>) {
 
 async fn assets_list() -> Json<Value> {
     Json(json!({"items":[]}))
+}
+
+async fn get_asset(
+    State(state): State<Arc<Mutex<SharedState>>>,
+    Path(id): Path<i64>,
+    uri: axum::http::Uri,
+) -> Json<Value> {
+    let mut guard = state.lock().unwrap();
+    guard.asset_get_uris.push(uri.to_string());
+    Json(json!({"id":id,"category_id":1000,"asset_tag":"AST-FLOW-001"}))
 }
 
 struct CmdOutput {
