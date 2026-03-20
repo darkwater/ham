@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "ham-server",
+    "ham-shared",
+    "ham-ui",
+]
+resolver = "2"
