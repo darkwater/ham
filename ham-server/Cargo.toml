@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ham-shared = { path = "../ham-shared", features = ["sqlx"] }
+ham-shared = { path = "../ham-shared" }
 
 anyhow             = "1.0.102"
 axum               = "0.8.8"

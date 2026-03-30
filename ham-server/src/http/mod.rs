@@ -1,11 +1,21 @@
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 mod assets;
+mod categories;
 
 pub async fn run(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/assets", get(crate::http::assets::list_assets))
+        .route("/assets", post(crate::http::assets::create_asset))
         .route("/assets/{id}", get(crate::http::assets::get_asset))
+        .route("/categories", get(crate::http::categories::list_categories))
+        .route(
+            "/categories",
+            post(crate::http::categories::create_category),
+        )
         .with_state(pool)
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
