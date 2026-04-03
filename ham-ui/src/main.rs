@@ -1,5 +1,6 @@
 use std::process::{ExitCode, Termination as _};
 
+mod db;
 mod gui;
 
 #[tokio::main]

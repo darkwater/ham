@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use egui::{Frame, Layout, UiBuilder, mutex::RwLock};
+use egui::{Layout, Popup, PopupCloseBehavior, Sense, UiBuilder, mutex::RwLock};
 use egui_table::{HeaderCellInfo, HeaderRow, Table, TableDelegate};
-use ham_shared::assets::Asset;
 
-use super::remote::RemoteState;
+use crate::db::{Asset, AssetDb};
 
 pub struct AssetTable<'a> {
-    remote: &'a RemoteState,
-    columns: Vec<AssetColumn>,
+    pub db: &'a AssetDb,
+    pub columns: &'a mut Vec<AssetColumn>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -20,6 +19,12 @@ pub enum AssetColumn {
 }
 
 impl AssetColumn {
+    pub const BASE: &[AssetColumn] = &[
+        AssetColumn::Tag,
+        AssetColumn::Category,
+        AssetColumn::DisplayName,
+    ];
+
     pub fn width(&self) -> f32 {
         match self {
             AssetColumn::Tag => 80.0,
@@ -29,12 +34,18 @@ impl AssetColumn {
         }
     }
 
-    fn header(&self) -> String {
+    fn header(&self, db: &AssetDb) -> String {
         match self {
             AssetColumn::Tag => "Tag".to_string(),
             AssetColumn::Category => "Category".to_string(),
             AssetColumn::DisplayName => "Display Name".to_string(),
-            AssetColumn::Field(field_id) => format!("Field {}", field_id),
+            AssetColumn::Field(field_id) => {
+                if let Some(field) = db.fields.iter().find(|f| f.id == *field_id) {
+                    field.display_name.clone()
+                } else {
+                    format!("Unknown Field ({})", field_id)
+                }
+            }
         }
     }
 
@@ -57,7 +68,7 @@ impl AssetColumn {
             }
             AssetColumn::Field(field_id) => {
                 if let Some(field) = asset.fields.iter().find(|f| f.field_id == *field_id) {
-                    ui.label(field.value.to_string());
+                    ui.add(&field.value);
                 } else {
                     ui.label("-");
                 }
@@ -67,27 +78,6 @@ impl AssetColumn {
 }
 
 impl<'a> AssetTable<'a> {
-    pub fn new(remote: &'a RemoteState) -> Self {
-        let mut columns = vec![
-            AssetColumn::Tag,
-            AssetColumn::Category,
-            AssetColumn::DisplayName,
-        ];
-
-        for asset in remote.assets() {
-            for field in &asset.fields {
-                if columns
-                    .iter()
-                    .all(|col| *col != AssetColumn::Field(field.field_id))
-                {
-                    columns.push(AssetColumn::Field(field.field_id));
-                }
-            }
-        }
-
-        Self { remote, columns }
-    }
-
     pub fn show(&mut self, ui: &mut egui::Ui) {
         Table::new()
             .columns(
@@ -105,65 +95,8 @@ impl<'a> AssetTable<'a> {
                 height: 24.0,
                 groups: vec![],
             }])
-            .num_rows(self.remote.assets().len() as u64 + 1)
+            .num_rows(self.db.assets.len() as u64)
             .show(ui, self);
-    }
-
-    fn new_asset_ui(&self, remote: &RemoteState, ui: &mut egui::Ui, col_nr: usize) {
-        let mut ui = ui.new_child(
-            UiBuilder::new()
-                .max_rect(ui.max_rect().shrink(2.))
-                .layout(Layout::top_down_justified(egui::Align::Center)),
-        );
-
-        match col_nr {
-            0 => {
-                ui.button("+");
-            }
-            1 => {
-                let new_category_id = ui.memory_mut(|m| {
-                    m.data
-                        .get_temp_mut_or_default::<Arc<RwLock<Option<i64>>>>(egui::Id::new(
-                            "new asset category",
-                        ))
-                        .clone()
-                });
-
-                let selected_text = match *new_category_id.read() {
-                    Some(category_id) => match remote.category(category_id) {
-                        Some(category) => {
-                            format!("({}) {}", category.id, category.display_name)
-                        }
-                        None => format!("Unknown category ({})", category_id),
-                    },
-                    None => String::new(),
-                };
-
-                egui::ComboBox::from_id_salt("new asset category")
-                    .selected_text(selected_text)
-                    .show_ui(&mut ui, |ui| {
-                        for category in remote.categories() {
-                            ui.selectable_value(
-                                &mut *new_category_id.write(),
-                                Some(category.id),
-                                format!("({}) {}", category.id, category.display_name),
-                            );
-                        }
-                    });
-            }
-            2 => {
-                let new_name = ui.memory_mut(|m| {
-                    m.data
-                        .get_temp_mut_or_default::<Arc<RwLock<String>>>(egui::Id::new(
-                            "new asset name",
-                        ))
-                        .clone()
-                });
-
-                ui.add(egui::TextEdit::singleline(&mut *new_name.write()).hint_text("New asset"));
-            }
-            _ => {}
-        }
     }
 }
 
@@ -179,7 +112,7 @@ impl TableDelegate for AssetTable<'_> {
 
         ui.set_clip_rect(rect);
 
-        egui::Frame::new()
+        let res = egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 4))
             .show(ui, |ui| {
                 ui.centered_and_justified(|ui| {
@@ -187,15 +120,38 @@ impl TableDelegate for AssetTable<'_> {
                         return;
                     };
 
-                    ui.label(column.header());
+                    ui.label(column.header(self.db));
                 });
+            })
+            .response
+            .interact(Sense::click());
+
+        Popup::context_menu(&res)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                ui.add_enabled_ui(false, |ui| {
+                    ui.checkbox(&mut true, "Tag");
+                    ui.checkbox(&mut true, "Category");
+                    ui.checkbox(&mut true, "Display Name");
+                });
+
+                for field in &self.db.fields {
+                    let mut visible = self.columns.contains(&AssetColumn::Field(field.id));
+
+                    if ui.checkbox(&mut visible, &field.display_name).changed() {
+                        if visible {
+                            self.columns.push(AssetColumn::Field(field.id));
+                        } else {
+                            self.columns
+                                .retain(|col| *col != AssetColumn::Field(field.id));
+                        }
+                    }
+                }
             });
     }
 
     fn cell_ui(&mut self, ui: &mut egui::Ui, cell: &egui_table::CellInfo) {
-        let Some(asset) = self.remote.assets().get(cell.row_nr as usize) else {
-            self.new_asset_ui(self.remote, ui, cell.col_nr);
-
+        let Some(asset) = self.db.assets.get(cell.row_nr as usize) else {
             return;
         };
 
@@ -219,7 +175,7 @@ impl TableDelegate for AssetTable<'_> {
         }
     }
 
-    fn default_row_height(&self) -> f32 {
-        28.
-    }
+    // fn default_row_height(&self) -> f32 {
+    //     28.
+    // }
 }
