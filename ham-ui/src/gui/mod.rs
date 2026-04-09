@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use egui::{
-    Align, CentralPanel, Frame, Layout, Margin, Panel, TextEdit, Vec2, mutex::RwLock, vec2,
-};
+use egui::{Align, CentralPanel, Frame, Layout, Margin, Panel, TextEdit, Vec2, mutex::RwLock};
 
 use self::table::{AssetColumn, AssetTable};
-use crate::db::{Asset, AssetDb, AssetField, Category, Field, FieldType, FieldValue};
+use crate::db::{AssetDb, AssetId, Category, Field, FieldType};
 
 mod table;
 
@@ -45,46 +43,10 @@ impl eframe::App for HamApp {
             ui.label("Asset database failed to load. Create a new one?");
             if ui.button("Create new").clicked() {
                 self.db_loaded = true;
-                for n in 1..=3 {
-                    self.db.assets.push(Asset {
-                        id: n,
-                        category_id: 1,
-                        display_name: "Example Asset".to_string(),
-                        fields: vec![AssetField {
-                            field_id: 1,
-                            value: FieldValue::String("Example Value".to_string()),
-                        }],
-                    });
-                }
                 self.db.categories.push(Category {
-                    id: 1,
+                    id: self.db.next_category_id(),
                     display_name: "Root".to_string(),
                     parent_id: None,
-                });
-                self.db.categories.push(Category {
-                    id: 2,
-                    display_name: "Tech".to_string(),
-                    parent_id: Some(1),
-                });
-                self.db.categories.push(Category {
-                    id: 3,
-                    display_name: "Computer".to_string(),
-                    parent_id: Some(2),
-                });
-                self.db.categories.push(Category {
-                    id: 4,
-                    display_name: "Peripheral".to_string(),
-                    parent_id: Some(2),
-                });
-                self.db.categories.push(Category {
-                    id: 5,
-                    display_name: "Appliance".to_string(),
-                    parent_id: Some(1),
-                });
-                self.db.fields.push(Field {
-                    id: 1,
-                    display_name: "Example Field".to_string(),
-                    field_type: FieldType::String,
                 });
             }
             return;
@@ -110,6 +72,13 @@ impl eframe::App for HamApp {
                     for page in Page::ALL {
                         ui.selectable_value(&mut self.current_page, *page, page.title());
                     }
+
+                    ui.separator();
+
+                    if ui.button("New asset").clicked() {
+                        let id = self.db.create_asset();
+                        self.current_page = Page::EditAsset(id);
+                    }
                 });
             });
 
@@ -129,6 +98,7 @@ enum Page {
     Assets,
     Categories,
     Fields,
+    EditAsset(AssetId),
 }
 
 impl Page {
@@ -139,14 +109,14 @@ impl Page {
             Page::Assets => "Assets",
             Page::Categories => "Categories",
             Page::Fields => "Fields",
+            Page::EditAsset(_) => "Edit Asset",
         }
     }
 
     fn frame(&self, ui: &egui::Ui) -> Frame {
         match self {
             Page::Assets => Frame::central_panel(ui.style()).inner_margin(0),
-            Page::Categories => Frame::central_panel(ui.style()),
-            Page::Fields => Frame::central_panel(ui.style()),
+            _ => Frame::central_panel(ui.style()),
         }
     }
 
@@ -263,6 +233,12 @@ impl Page {
                             new_name.write().clear();
                         }
                     });
+            }
+            Page::EditAsset(id) => {
+                let Some(asset) = app.db.asset_mut(*id) else {
+                    ui.label("Asset not found");
+                    return;
+                };
             }
         }
     }

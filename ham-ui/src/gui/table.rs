@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
-use egui::{Layout, Popup, PopupCloseBehavior, Sense, UiBuilder, mutex::RwLock};
+use egui::{Popup, PopupCloseBehavior, Sense};
 use egui_table::{HeaderCellInfo, HeaderRow, Table, TableDelegate};
 
-use crate::db::{Asset, AssetDb};
+use crate::db::{Asset, AssetDb, FieldId};
 
 pub struct AssetTable<'a> {
     pub db: &'a AssetDb,
@@ -15,15 +13,12 @@ pub enum AssetColumn {
     Tag,
     Category,
     DisplayName,
-    Field(i64),
+    Field(FieldId),
 }
 
 impl AssetColumn {
-    pub const BASE: &[AssetColumn] = &[
-        AssetColumn::Tag,
-        AssetColumn::Category,
-        AssetColumn::DisplayName,
-    ];
+    pub const BASE: &[AssetColumn] =
+        &[AssetColumn::Tag, AssetColumn::Category, AssetColumn::DisplayName];
 
     pub fn width(&self) -> f32 {
         match self {
@@ -43,7 +38,7 @@ impl AssetColumn {
                 if let Some(field) = db.fields.iter().find(|f| f.id == *field_id) {
                     field.display_name.clone()
                 } else {
-                    format!("Unknown Field ({})", field_id)
+                    format!("Unknown Field ({:?})", field_id)
                 }
             }
         }
@@ -54,14 +49,17 @@ impl AssetColumn {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 3))
     }
 
-    pub fn contents(&self, ui: &mut egui::Ui, asset: &Asset) {
+    pub fn contents(&self, ui: &mut egui::Ui, db: &AssetDb, asset: &Asset) {
         match self {
             AssetColumn::Tag => {
-                // TODO: tag formatting
-                ui.label(format!("A{:03}", asset.id));
+                ui.label(db.format_asset_tag(asset.id));
             }
             AssetColumn::Category => {
-                ui.label(format!("C{:03}", asset.category_id));
+                ui.label(
+                    db.category(asset.category_id)
+                        .map(|c| c.display_name.clone())
+                        .unwrap_or("-".to_string()),
+                );
             }
             AssetColumn::DisplayName => {
                 ui.label(&asset.display_name);
@@ -91,10 +89,7 @@ impl<'a> AssetTable<'a> {
                     .collect::<Vec<_>>(),
             )
             .num_sticky_cols(1)
-            .headers([HeaderRow {
-                height: 24.0,
-                groups: vec![],
-            }])
+            .headers([HeaderRow { height: 24.0, groups: vec![] }])
             .num_rows(self.db.assets.len() as u64)
             .show(ui, self);
     }
@@ -161,7 +156,7 @@ impl TableDelegate for AssetTable<'_> {
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
             column.frame().show(ui, |ui| {
-                column.contents(ui, asset);
+                column.contents(ui, self.db, asset);
             });
         });
     }

@@ -1,47 +1,83 @@
+use core::default::Default;
+
 use egui::Widget;
 use rusty_money::{Money, iso::Currency};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AssetDb {
     pub assets: Vec<Asset>,
     pub categories: Vec<Category>,
     pub fields: Vec<Field>,
+    pub settings: Settings,
 }
 
 impl AssetDb {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn format_asset_tag(&self, asset_id: AssetId) -> String {
+        format!(
+            "{}{:0width$}",
+            self.settings.tag_prefix,
+            asset_id.0,
+            width = self.settings.tag_digits,
+        )
     }
 
-    pub fn category(&self, category_id: i64) -> Option<&Category> {
+    pub fn asset_mut(&mut self, id: AssetId) -> Option<&mut Asset> {
+        self.assets.iter_mut().find(|a| a.id == id)
+    }
+
+    pub fn create_asset(&mut self) -> AssetId {
+        let id = self.next_asset_id();
+
+        self.assets.push(Asset {
+            id,
+            category_id: CategoryId(1),
+            display_name: format!("New Asset {}", id.0),
+            fields: Vec::new(),
+        });
+
+        id
+    }
+
+    pub fn category(&self, category_id: CategoryId) -> Option<&Category> {
         self.categories.iter().find(|c| c.id == category_id)
     }
 
-    pub fn next_asset_id(&self) -> i64 {
-        self.assets.iter().map(|a| a.id).max().unwrap_or(0) + 1
+    pub fn next_asset_id(&self) -> AssetId {
+        AssetId(self.assets.iter().map(|a| a.id.0).max().unwrap_or(0) + 1)
     }
 
-    pub fn next_category_id(&self) -> i64 {
-        self.categories.iter().map(|c| c.id).max().unwrap_or(0) + 1
+    pub fn next_category_id(&self) -> CategoryId {
+        CategoryId(self.categories.iter().map(|c| c.id.0).max().unwrap_or(0) + 1)
     }
 
-    pub fn next_field_id(&self) -> i64 {
-        self.fields.iter().map(|f| f.id).max().unwrap_or(0) + 1
+    pub fn next_field_id(&self) -> FieldId {
+        FieldId(self.fields.iter().map(|f| f.id.0).max().unwrap_or(0) + 1)
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AssetId(i64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CategoryId(i64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FieldId(i64);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Asset {
-    pub id: i64,
-    pub category_id: i64,
+    pub id: AssetId,
+    pub category_id: CategoryId,
     pub display_name: String,
     pub fields: Vec<AssetField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetField {
-    pub field_id: i64,
+    pub field_id: FieldId,
     pub value: FieldValue,
 }
 
@@ -152,14 +188,29 @@ impl Widget for &FieldValue {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Category {
-    pub id: i64,
+    pub id: CategoryId,
     pub display_name: String,
-    pub parent_id: Option<i64>,
+    pub parent_id: Option<CategoryId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Field {
-    pub id: i64,
+    pub id: FieldId,
     pub display_name: String,
     pub field_type: FieldType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
+    pub tag_prefix: String,
+    pub tag_digits: usize,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            tag_prefix: "A".to_string(),
+            tag_digits: 4,
+        }
+    }
 }
