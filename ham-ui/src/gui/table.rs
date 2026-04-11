@@ -1,10 +1,11 @@
-use egui::{Popup, PopupCloseBehavior, Sense};
+use egui::{CursorIcon, Popup, PopupCloseBehavior, Sense};
 use egui_table::{HeaderCellInfo, HeaderRow, Table, TableDelegate};
 
+use super::{Page, next_page_id};
 use crate::db::{Asset, AssetDb, FieldId};
 
 pub struct AssetTable<'a> {
-    pub db: &'a AssetDb,
+    pub db: &'a mut AssetDb,
     pub columns: &'a mut Vec<AssetColumn>,
 }
 
@@ -35,7 +36,7 @@ impl AssetColumn {
             AssetColumn::Category => "Category".to_string(),
             AssetColumn::DisplayName => "Display Name".to_string(),
             AssetColumn::Field(field_id) => {
-                if let Some(field) = db.fields.iter().find(|f| f.id == *field_id) {
+                if let Some(field) = db.fields.get(*field_id) {
                     field.display_name.clone()
                 } else {
                     format!("Unknown Field ({:?})", field_id)
@@ -88,7 +89,6 @@ impl<'a> AssetTable<'a> {
                     })
                     .collect::<Vec<_>>(),
             )
-            .num_sticky_cols(1)
             .headers([HeaderRow { height: 24.0, groups: vec![] }])
             .num_rows(self.db.assets.len() as u64)
             .show(ui, self);
@@ -130,7 +130,7 @@ impl TableDelegate for AssetTable<'_> {
                     ui.checkbox(&mut true, "Display Name");
                 });
 
-                for field in &self.db.fields {
+                for field in self.db.fields.values() {
                     let mut visible = self.columns.contains(&AssetColumn::Field(field.id));
 
                     if ui.checkbox(&mut visible, &field.display_name).changed() {
@@ -146,7 +146,7 @@ impl TableDelegate for AssetTable<'_> {
     }
 
     fn cell_ui(&mut self, ui: &mut egui::Ui, cell: &egui_table::CellInfo) {
-        let Some(asset) = self.db.assets.get(cell.row_nr as usize) else {
+        let Some(asset) = self.db.assets.get_index(cell.row_nr as usize) else {
             return;
         };
 
@@ -164,13 +164,40 @@ impl TableDelegate for AssetTable<'_> {
     fn row_ui(&mut self, ui: &mut egui::Ui, row_nr: u64) {
         let odd_row = row_nr % 2 == 1;
 
-        if odd_row {
+        let res = ui
+            .response()
+            .interact(Sense::click())
+            .on_hover_cursor(CursorIcon::PointingHand);
+
+        res.context_menu(|ui| {
+            if let Some(asset) = self.db.assets.get_index(row_nr as usize) {
+                let asset_id = asset.id;
+                ui.menu_button("Delete", |ui| {
+                    if ui.button("Confirm").clicked() {
+                        self.db.assets.remove(asset_id);
+                    }
+                });
+            }
+        });
+
+        if res.clicked() {
+            if let Some(asset) = self.db.assets.get_index(row_nr as usize) {
+                ui.memory_mut(|m| {
+                    m.data
+                        .insert_temp(next_page_id(), Page::EditAsset(asset.id))
+                });
+            }
+        } else if res.hovered() {
+            if res.is_pointer_button_down_on() {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, ui.visuals().widgets.active.bg_fill);
+            } else {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, ui.visuals().widgets.hovered.bg_fill);
+            }
+        } else if odd_row {
             ui.painter()
                 .rect_filled(ui.max_rect(), 0.0, ui.visuals().faint_bg_color);
         }
     }
-
-    // fn default_row_height(&self) -> f32 {
-    //     28.
-    // }
 }

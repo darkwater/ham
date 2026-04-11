@@ -1,15 +1,19 @@
+pub mod map;
+
 use core::default::Default;
 
 use egui::Widget;
 use rusty_money::{Money, iso::Currency};
 use serde::{Deserialize, Serialize};
 
+use self::map::Map;
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AssetDb {
-    pub assets: Vec<Asset>,
-    pub categories: Vec<Category>,
-    pub fields: Vec<Field>,
+    pub assets: Map<Asset>,
+    pub categories: Map<Category>,
+    pub fields: Map<Field>,
     pub settings: Settings,
 }
 
@@ -21,10 +25,6 @@ impl AssetDb {
             asset_id.0,
             width = self.settings.tag_digits,
         )
-    }
-
-    pub fn asset_mut(&mut self, id: AssetId) -> Option<&mut Asset> {
-        self.assets.iter_mut().find(|a| a.id == id)
     }
 
     pub fn create_asset(&mut self) -> AssetId {
@@ -41,19 +41,23 @@ impl AssetDb {
     }
 
     pub fn category(&self, category_id: CategoryId) -> Option<&Category> {
-        self.categories.iter().find(|c| c.id == category_id)
+        self.categories.get(category_id)
+    }
+
+    pub fn field(&self, field_id: FieldId) -> Option<&Field> {
+        self.fields.get(field_id)
     }
 
     pub fn next_asset_id(&self) -> AssetId {
-        AssetId(self.assets.iter().map(|a| a.id.0).max().unwrap_or(0) + 1)
+        AssetId(self.assets.values().map(|a| a.id.0).max().unwrap_or(0) + 1)
     }
 
     pub fn next_category_id(&self) -> CategoryId {
-        CategoryId(self.categories.iter().map(|c| c.id.0).max().unwrap_or(0) + 1)
+        CategoryId(self.categories.values().map(|c| c.id.0).max().unwrap_or(0) + 1)
     }
 
     pub fn next_field_id(&self) -> FieldId {
-        FieldId(self.fields.iter().map(|f| f.id.0).max().unwrap_or(0) + 1)
+        FieldId(self.fields.values().map(|f| f.id.0).max().unwrap_or(0) + 1)
     }
 }
 
@@ -191,6 +195,7 @@ pub struct Category {
     pub id: CategoryId,
     pub display_name: String,
     pub parent_id: Option<CategoryId>,
+    pub fields: Vec<FieldId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
