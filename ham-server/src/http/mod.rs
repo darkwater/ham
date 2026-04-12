@@ -13,6 +13,7 @@ pub async fn run(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         .route("/assets/{id}", get(crate::http::assets::get_asset))
         .route("/categories", get(crate::http::categories::list_categories))
         .route("/categories", post(crate::http::categories::create_category))
+        .route("/fields", get(crate::http::categories::list_fields))
         .with_state(pool)
         .layer(tower_http::trace::TraceLayer::new_for_http());
 

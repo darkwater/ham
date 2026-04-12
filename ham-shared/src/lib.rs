@@ -20,7 +20,7 @@ pub struct Asset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetField {
     pub field_id: FieldId,
-    pub value: serde_json::Value,
+    pub value: FieldValue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,12 +39,128 @@ pub struct Category {
     pub id: CategoryId,
     pub display_name: String,
     pub parent_id: Option<CategoryId>,
+    pub field_ids: Vec<FieldId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Field {
+    pub id: FieldId,
+    pub display_name: String,
+    pub value_type: FieldType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum FieldType {
+    String,
+    Int,
+    Float,
+    Money,
+    Boolean,
+    DateTime(DateTimePrecision),
+    Enum(EnumId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum DateTimePrecision {
+    Year,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    Second,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FieldValue {
+    String(String),
+    Int(i64),
+    Float(f64),
+    Money {
+        amount: String,
+        currency: String,
+    },
+    Boolean(bool),
+    DateTime {
+        date: chrono::DateTime<chrono::Utc>,
+        precision: DateTimePrecision,
+    },
+    Enum {
+        enum_id: EnumId,
+        value: EnumValueId,
+    },
+}
+
+impl FieldValue {
+    pub fn field_type(&self) -> FieldType {
+        match self {
+            FieldValue::String(_) => FieldType::String,
+            FieldValue::Int(_) => FieldType::Int,
+            FieldValue::Float(_) => FieldType::Float,
+            FieldValue::Money { .. } => FieldType::Money,
+            FieldValue::Boolean(_) => FieldType::Boolean,
+            FieldValue::DateTime { precision, .. } => FieldType::DateTime(*precision),
+            FieldValue::Enum { enum_id, .. } => FieldType::Enum(*enum_id),
+        }
+    }
+
+    // pub fn display(&self, enum_values: &[EnumValue]) -> String {
+    //     match self {
+    //         FieldValue::String(s) => s.clone(),
+    //         FieldValue::Int(i) => i.to_string(),
+    //         FieldValue::Float(fl) => fl.to_string(),
+    //         FieldValue::Money { amount, currency } => format!("{} {}", currency, amount),
+    //         FieldValue::Boolean(b) => b.to_string(),
+    //         FieldValue::DateTime { date, precision } => {
+    //             let fmt = match precision {
+    //                 DateTimePrecision::Year => "%Y",
+    //                 DateTimePrecision::Month => "%Y-%m",
+    //                 DateTimePrecision::Day => "%Y-%m-%d",
+    //                 DateTimePrecision::Hour => "%Y-%m-%d %H",
+    //                 DateTimePrecision::Minute => "%Y-%m-%d %H:%M",
+    //                 DateTimePrecision::Second => "%Y-%m-%d %H:%M:%S",
+    //             };
+    //             date.format(fmt).to_string()
+    //         }
+    //         FieldValue::Enum { enum_id, value } => {
+    //             enum_values
+    //                 .iter()
+    //                 .find(|ev| ev.enum_id == *enum_id && ev.id == *value)
+    //                 .map(|ev| ev.display_name.clone())
+    //                 .unwrap_or_else(|| format!("Unknown enum value {value:?} for enum {enum_id:?}"))
+    //         }
+    //     }
+    // }
+}
+
+impl Display for FieldValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldValue::String(s) => s.fmt(f),
+            FieldValue::Int(i) => i.fmt(f),
+            FieldValue::Float(fl) => fl.fmt(f),
+            FieldValue::Money { amount, currency } => write!(f, "{} {}", currency, amount),
+            FieldValue::Boolean(b) => b.fmt(f),
+            FieldValue::DateTime { date, precision } => {
+                let fmt = match precision {
+                    DateTimePrecision::Year => "%Y",
+                    DateTimePrecision::Month => "%Y-%m",
+                    DateTimePrecision::Day => "%Y-%m-%d",
+                    DateTimePrecision::Hour => "%Y-%m-%d %H",
+                    DateTimePrecision::Minute => "%Y-%m-%d %H:%M",
+                    DateTimePrecision::Second => "%Y-%m-%d %H:%M:%S",
+                };
+                date.format(fmt).fmt(f)
+            }
+            FieldValue::Enum { value, .. } => value.fmt(f),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateCategoryParams {
     pub display_name: String,
     pub parent_id: Option<CategoryId>,
+    pub field_ids: Vec<FieldId>,
 }
 
 macro_rules! newtypes {
@@ -71,4 +187,4 @@ macro_rules! newtypes {
     };
 }
 
-newtypes!(AssetId, CategoryId, FieldId);
+newtypes!(AssetId, CategoryId, FieldId, EnumId, EnumValueId);

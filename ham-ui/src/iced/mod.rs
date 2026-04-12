@@ -1,7 +1,9 @@
-use std::collections::BTreeSet;
+mod assets;
 
-use ham_shared::{Asset, Category, CommaSeparated, FieldId, ListAssetParams};
-use iced::{Font, Task, font};
+use std::sync::Arc;
+
+use ham_shared::{Asset, Category, CategoryId, CommaSeparated, Field, FieldId, ListAssetParams};
+use iced::{Task, futures::FutureExt as _};
 
 pub fn main() -> iced::Result {
     iced::application(Ham::new, Ham::update, Ham::view)
@@ -12,31 +14,58 @@ pub fn main() -> iced::Result {
 }
 
 struct Ham {
+    global: GlobalState,
+    page: HamPage,
+    assets_state: assets::State,
+}
+
+#[derive(Debug, Default)]
+struct GlobalState {
     assets: Vec<Asset>,
     categories: Vec<Category>,
-    page: HamPage,
+    fields: Vec<Field>,
+
+    fetch_asset_fields: Vec<FieldId>,
+}
+
+impl GlobalState {
+    fn category(&self, category_id: CategoryId) -> Option<&Category> {
+        self.categories.iter().find(|c| c.id == category_id)
+    }
+
+    fn field(&self, field_id: FieldId) -> Option<&Field> {
+        self.fields.iter().find(|f| f.id == field_id)
+    }
 }
 
 enum HamPage {
-    Loading,
     Assets,
 }
 
+#[derive(Debug, Clone)]
 enum Message {
-    AssetsLoaded(surf::Result<Vec<Asset>>),
-    CategoriesLoaded(surf::Result<Vec<Category>>),
+    AssetsLoaded(Arc<surf::Result<Vec<Asset>>>),
+    CategoriesLoaded(Arc<surf::Result<Vec<Category>>>),
+    FieldsLoaded(Arc<surf::Result<Vec<Field>>>),
+    RefreshAssets,
+    ToggleFetchAssetField(FieldId, bool),
 }
 
 impl Ham {
     fn new() -> (Self, Task<Message>) {
-        (
-            Self {
-                assets: Vec::new(),
-                categories: Vec::new(),
-                page: HamPage::Loading,
-            },
-            Task::batch([Self::load_categories(), Self::load_assets()]),
-        )
+        let this = Self {
+            global: GlobalState::default(),
+            page: HamPage::Assets,
+            assets_state: assets::State::default(),
+        };
+
+        let init = this.init();
+
+        (this, init)
+    }
+
+    fn init(&self) -> Task<Message> {
+        Task::batch([Self::load_categories(), self.load_assets(), Self::load_fields()])
     }
 
     fn theme(&self) -> iced::theme::Theme {
@@ -47,77 +76,37 @@ impl Ham {
         "Ham".to_string()
     }
 
-    fn update(&mut self, message: Message) {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::AssetsLoaded(Ok(assets)) => {
-                self.assets = assets;
-                self.page = HamPage::Assets
+            Message::AssetsLoaded(assets) => {
+                self.global.assets = self.handle_surf_err_arc(assets);
+                Task::none()
             }
-            Message::CategoriesLoaded(Ok(categories)) => {
-                self.categories = categories;
+            Message::CategoriesLoaded(categories) => {
+                self.global.categories = self.handle_surf_err_arc(categories);
+                Task::none()
             }
-            Message::AssetsLoaded(Err(e)) => {
-                todo!("Failed to load assets: {e:?}")
+            Message::FieldsLoaded(fields) => {
+                self.global.fields = self.handle_surf_err_arc(fields);
+                Task::none()
             }
-            Message::CategoriesLoaded(Err(e)) => {
-                todo!("Failed to load categories: {e:?}")
+
+            Message::RefreshAssets => self.load_assets(),
+
+            Message::ToggleFetchAssetField(field_id, enabled) => {
+                if enabled {
+                    self.global.fetch_asset_fields.push(field_id);
+                } else {
+                    self.global.fetch_asset_fields.retain(|&id| id != field_id);
+                }
+                Task::none()
             }
         }
     }
 
     fn view(&self) -> iced::Element<'_, Message> {
-        use iced::widget::*;
-
         match &self.page {
-            HamPage::Loading => text("Loading").size(50).into(),
-            HamPage::Assets => {
-                let fields = self
-                    .assets
-                    .iter()
-                    .flat_map(|asset| asset.fields.iter().map(|field| field.field_id))
-                    .collect::<BTreeSet<_>>();
-
-                let header = |label| {
-                    text(label).font(Font {
-                        weight: font::Weight::Bold,
-                        ..Font::DEFAULT
-                    })
-                };
-
-                let mut columns = vec![
-                    table::column(header("Tag".to_owned()), |asset: &Asset| {
-                        text(asset.id.0.to_string())
-                    }),
-                    table::column(header("Category".to_owned()), |asset: &Asset| {
-                        if let Some(category) =
-                            self.categories.iter().find(|c| c.id == asset.category_id)
-                        {
-                            text(&category.display_name)
-                        } else {
-                            text("-")
-                        }
-                    }),
-                    table::column(header("Name".to_owned()), |asset: &Asset| {
-                        text(&asset.display_name)
-                    }),
-                ];
-
-                for field_id in fields {
-                    columns.push(table::column(
-                        header(format!("Field {}", field_id.0)),
-                        move |asset: &Asset| {
-                            asset
-                                .fields
-                                .iter()
-                                .find(|field| field.field_id == field_id)
-                                .map(|field| text(field.value.to_string()))
-                                .unwrap_or_else(|| text("-"))
-                        },
-                    ));
-                }
-
-                table(columns, &self.assets).into()
-            }
+            HamPage::Assets => self.assets_state.view(&self.global),
         }
     }
 
@@ -127,22 +116,47 @@ impl Ham {
 }
 
 impl Ham {
-    fn load_assets() -> Task<Message> {
+    fn load_assets(&self) -> Task<Message> {
         Task::perform(
             surf::get("http://localhost:6172/assets")
                 .query(&ListAssetParams {
-                    field_ids: CommaSeparated::from_slice(&[FieldId(1)]),
+                    field_ids: CommaSeparated::from_slice(&self.global.fetch_asset_fields),
                 })
                 .unwrap()
-                .recv_json::<Vec<Asset>>(),
+                .recv_json::<Vec<Asset>>()
+                .map(Arc::new),
             Message::AssetsLoaded,
         )
     }
 
     fn load_categories() -> Task<Message> {
         Task::perform(
-            surf::get("http://localhost:6172/categories").recv_json::<Vec<Category>>(),
+            surf::get("http://localhost:6172/categories")
+                .recv_json::<Vec<Category>>()
+                .map(Arc::new),
             Message::CategoriesLoaded,
         )
+    }
+
+    fn load_fields() -> Task<Message> {
+        Task::perform(
+            surf::get("http://localhost:6172/fields")
+                .recv_json::<Vec<Field>>()
+                .map(Arc::new),
+            Message::FieldsLoaded,
+        )
+    }
+
+    fn handle_surf_err_arc<T>(&self, result: Arc<surf::Result<T>>) -> T {
+        let Ok(result) = Arc::try_unwrap(result) else {
+            panic!("Arc<surf::Result<T>> had multiple strong refs");
+        };
+
+        match result {
+            Ok(value) => value,
+            Err(e) => {
+                todo!("Handle surf error: {e}");
+            }
+        }
     }
 }

@@ -12,7 +12,8 @@ ham-shared = { path = "../ham-shared" }
 # egui_table   = "0.8.0"
 # poll-promise = { version = "0.3.0", features = ["tokio"] }
 
-iced = "0.14.0"
+iced    = "0.14.0"
+iced_aw = "0.13.1"
 
 chrono       = { version = "0.4.44", features = ["serde"] }
 rusty-money  = { version = "0.5.0", features = ["serde"] }

@@ -73,7 +73,7 @@ CREATE TABLE event_type_mutations (
 CREATE TABLE asset_field_values (
     asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     field_id   INTEGER NOT NULL REFERENCES field_definitions(id),
-    value      JSON NOT NULL,
+    value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (asset_id, field_id)

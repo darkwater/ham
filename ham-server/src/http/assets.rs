@@ -48,20 +48,35 @@ pub async fn list_assets(
         let asset_id: i64 = row.get("id");
         let category_id: i64 = row.get("category_id");
         let display_name: String = row.get("display_name");
-        let field_id: Option<_> = row.get("field_id");
-        let value: Option<_> = row.get("value");
+        let field_id: Option<i64> = row.get("field_id");
+        let value: Option<String> = row.get("value");
+
+        let asset_id = AssetId(asset_id);
+        let category_id = CategoryId(category_id);
+        let field_id = field_id.map(FieldId);
+
+        let value = value.and_then(|v| {
+            let Some(field_id) = field_id else {
+                tracing::error!("BUG: field_id is None but value is {v} for {asset_id:?}");
+                return None;
+            };
+
+            ron::from_str(&v)
+                .inspect_err(|e| {
+                    tracing::error!("Failed to parse {field_id:?} value for {asset_id:?}: {e}");
+                })
+                .ok()
+        });
 
         let asset = assets.entry(asset_id).or_insert_with(|| Asset {
-            id: AssetId(asset_id),
-            category_id: CategoryId(category_id),
+            id: asset_id,
+            category_id,
             display_name,
             fields: Vec::new(),
         });
 
         if let (Some(field_id), Some(value)) = (field_id, value) {
-            asset
-                .fields
-                .push(AssetField { field_id: FieldId(field_id), value });
+            asset.fields.push(AssetField { field_id, value });
         }
     }
 
@@ -121,16 +136,23 @@ pub async fn get_asset(
     };
 
     let fields = sqlx::query!(
-            "SELECT field_id, value AS \"value: serde_json::Value\" FROM asset_field_values WHERE asset_id = ?",
-            asset.id.0,
-        )
-        .map(|row| AssetField {
-            field_id: FieldId(row.field_id),
-            value: row.value,
-        })
-        .fetch_all(&pool)
-        .await
-        .unwrap();
+        "SELECT field_id, value FROM asset_field_values WHERE asset_id = ?",
+        asset.id.0,
+    )
+    .try_map(|row| {
+        let field_id = FieldId(row.field_id);
+
+        let value = ron::from_str(&row.value)
+            .inspect_err(|e| {
+                tracing::error!("Failed to parse {field_id:?} value for {:?}: {e}", asset.id);
+            })
+            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+
+        Ok(AssetField { field_id, value })
+    })
+    .fetch_all(&pool)
+    .await
+    .unwrap();
 
     asset.fields = fields;
     Ok(Json(asset))
