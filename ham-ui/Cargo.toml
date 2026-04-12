@@ -7,11 +7,14 @@ default-run = "ham-ui"
 [dependencies]
 ham-shared = { path = "../ham-shared" }
 
+# eframe       = { version = "0.34.1", features = ["persistence"] }
+# egui         = "0.34.1"
+# egui_table   = "0.8.0"
+# poll-promise = { version = "0.3.0", features = ["tokio"] }
+
+iced = "0.14.0"
+
 chrono       = { version = "0.4.44", features = ["serde"] }
-eframe       = { version = "0.34.1", features = ["persistence"] }
-egui         = "0.34.1"
-egui_table   = "0.8.0"
-poll-promise = { version = "0.3.0", features = ["tokio"] }
 rusty-money  = { version = "0.5.0", features = ["serde"] }
 serde        = { version = "1.0", features = ["derive"] }
 surf         = "2.3.2"

@@ -8,6 +8,7 @@ ham-shared = { path = "../ham-shared" }
 
 anyhow             = "1.0.102"
 axum               = "0.8.8"
+axum-extra         = { version = "0.12.5", features = ["query"] }
 chrono             = "0.4.44"
 dotenvy            = "0.15.7"
 serde              = { version = "1.0.228", features = ["derive"] }

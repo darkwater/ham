@@ -1,9 +1,10 @@
 use std::process::{ExitCode, Termination as _};
 
-mod db;
-mod gui;
+// mod db;
+// mod gui;
+mod iced;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    gui::main().report()
+    iced::main().report()
 }

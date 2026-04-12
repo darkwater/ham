@@ -70,7 +70,7 @@ CREATE TABLE event_type_mutations (
     UNIQUE (event_type_id, event_type_version, mutation_index)
 );
 
-CREATE TABLE asset_current_field_values (
+CREATE TABLE asset_field_values (
     asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     field_id   INTEGER NOT NULL REFERENCES field_definitions(id),
     value      JSON NOT NULL,
@@ -98,4 +98,4 @@ CREATE TABLE settings (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 INSERT INTO settings (name, value) VALUES ('next_asset_id', '1');
-INSERT INTO settings (name, value) VALUES ('asset_prefix', 'A');
+INSERT INTO settings (name, value) VALUES ('asset_tag_prefix', 'A');

@@ -177,6 +177,7 @@ impl Page {
 
                     ui.heading("Fields");
 
+                    let mut remove_field_id = None;
                     for id in &cat.fields {
                         let res = if let Some(field) = app.db.field(*id) {
                             ui.checkbox(&mut true, &field.display_name)
@@ -184,8 +185,28 @@ impl Page {
                             ui.checkbox(&mut true, format!("Unknown field ({id:?})"))
                         };
 
-                        if res.changed() {}
+                        if res.changed() {
+                            remove_field_id = Some(*id);
+                        }
                     }
+
+                    let fields = cat.fields.clone();
+                    egui::ComboBox::new("add field combo", "")
+                        .selected_text("Add field")
+                        .show_ui(ui, |ui| {
+                            for field in app.db.fields.values() {
+                                ui.add_enabled_ui(!fields.contains(&field.id), |ui| {
+                                    if ui.selectable_label(false, &field.display_name).clicked() {
+                                        app.db
+                                            .categories
+                                            .get_mut(id)
+                                            .unwrap()
+                                            .fields
+                                            .push(field.id);
+                                    }
+                                });
+                            }
+                        });
 
                     ui.add_space(16.);
 
@@ -228,6 +249,11 @@ impl Page {
                             app.db.categories.push(new_cat.clone());
                         }
                     });
+
+                    if let Some(field_id) = remove_field_id {
+                        let cat = app.db.categories.get_mut(id).unwrap();
+                        cat.fields.retain(|&id| id != field_id);
+                    }
                 }
             }
             Page::Fields => {
