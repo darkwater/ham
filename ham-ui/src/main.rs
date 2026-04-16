@@ -1,3 +1,5 @@
+#![feature(iter_intersperse)]
+
 use std::process::{ExitCode, Termination as _};
 
 // mod db;
