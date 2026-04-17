@@ -1,12 +1,15 @@
 use egui::{CursorIcon, Popup, PopupCloseBehavior, Sense};
 use egui_table::{HeaderCellInfo, HeaderRow, Table, TableDelegate};
+use ham_shared::{Asset, FieldId};
 
-use super::{Page, next_page_id};
-use crate::db::{Asset, AssetDb, FieldId};
+use crate::gui::{ElmCtx, GlobalState, HamPage, Message};
+
+// use super::{Page, next_page_id};
 
 pub struct AssetTable<'a> {
-    pub db: &'a mut AssetDb,
-    pub columns: &'a mut Vec<AssetColumn>,
+    pub global: &'a GlobalState,
+    pub columns: Vec<AssetColumn>,
+    pub elm: &'a mut ElmCtx<Message>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -30,13 +33,13 @@ impl AssetColumn {
         }
     }
 
-    fn header(&self, db: &AssetDb) -> String {
+    fn header(&self, global: &GlobalState) -> String {
         match self {
             AssetColumn::Tag => "Tag".to_string(),
             AssetColumn::Category => "Category".to_string(),
             AssetColumn::DisplayName => "Display Name".to_string(),
             AssetColumn::Field(field_id) => {
-                if let Some(field) = db.fields.get(*field_id) {
+                if let Some(field) = global.field(*field_id) {
                     field.display_name.clone()
                 } else {
                     format!("Unknown Field ({:?})", field_id)
@@ -50,14 +53,15 @@ impl AssetColumn {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 3))
     }
 
-    pub fn contents(&self, ui: &mut egui::Ui, db: &AssetDb, asset: &Asset) {
+    pub fn contents(&self, ui: &mut egui::Ui, global: &GlobalState, asset: &Asset) {
         match self {
             AssetColumn::Tag => {
-                ui.label(db.format_asset_tag(asset.id));
+                ui.label(global.format_asset_tag(asset.id));
             }
             AssetColumn::Category => {
                 ui.label(
-                    db.category(asset.category_id)
+                    global
+                        .category(asset.category_id)
                         .map(|c| c.display_name.clone())
                         .unwrap_or("-".to_string()),
                 );
@@ -67,7 +71,7 @@ impl AssetColumn {
             }
             AssetColumn::Field(field_id) => {
                 if let Some(field) = asset.fields.iter().find(|f| f.field_id == *field_id) {
-                    ui.add(&field.value);
+                    ui.label(field.value.to_string());
                 } else {
                     ui.label("-");
                 }
@@ -90,7 +94,7 @@ impl<'a> AssetTable<'a> {
                     .collect::<Vec<_>>(),
             )
             .headers([HeaderRow { height: 24.0, groups: vec![] }])
-            .num_rows(self.db.assets.len() as u64)
+            .num_rows(self.global.assets.len() as u64)
             .show(ui, self);
     }
 }
@@ -115,7 +119,7 @@ impl TableDelegate for AssetTable<'_> {
                         return;
                     };
 
-                    ui.label(column.header(self.db));
+                    ui.label(column.header(self.global));
                 });
             })
             .response
@@ -130,7 +134,7 @@ impl TableDelegate for AssetTable<'_> {
                     ui.checkbox(&mut true, "Display Name");
                 });
 
-                for field in self.db.fields.values() {
+                for field in &self.global.fields {
                     let mut visible = self.columns.contains(&AssetColumn::Field(field.id));
 
                     if ui.checkbox(&mut visible, &field.display_name).changed() {
@@ -146,7 +150,7 @@ impl TableDelegate for AssetTable<'_> {
     }
 
     fn cell_ui(&mut self, ui: &mut egui::Ui, cell: &egui_table::CellInfo) {
-        let Some(asset) = self.db.assets.get_index(cell.row_nr as usize) else {
+        let Some(asset) = self.global.assets.get(cell.row_nr as usize) else {
             return;
         };
 
@@ -156,7 +160,7 @@ impl TableDelegate for AssetTable<'_> {
 
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
             column.frame().show(ui, |ui| {
-                column.contents(ui, self.db, asset);
+                column.contents(ui, self.global, asset);
             });
         });
     }
@@ -170,22 +174,20 @@ impl TableDelegate for AssetTable<'_> {
             .on_hover_cursor(CursorIcon::PointingHand);
 
         res.context_menu(|ui| {
-            if let Some(asset) = self.db.assets.get_index(row_nr as usize) {
+            if let Some(asset) = self.global.assets.get(row_nr as usize) {
                 let asset_id = asset.id;
                 ui.menu_button("Delete", |ui| {
                     if ui.button("Confirm").clicked() {
-                        self.db.assets.remove(asset_id);
+                        self.elm.send(Message::DeleteAsset(asset_id));
                     }
                 });
             }
         });
 
         if res.clicked() {
-            if let Some(asset) = self.db.assets.get_index(row_nr as usize) {
-                ui.memory_mut(|m| {
-                    m.data
-                        .insert_temp(next_page_id(), Page::EditAsset(asset.id))
-                });
+            if let Some(asset) = self.global.assets.get(row_nr as usize) {
+                self.elm
+                    .send(Message::ChangePage(HamPage::EditAsset(asset.id)));
             }
         } else if res.hovered() {
             if res.is_pointer_button_down_on() {

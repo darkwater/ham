@@ -3,5 +3,6 @@ members = [
     "ham-server",
     "ham-shared",
     "ham-ui",
+    "egui-elm",
 ]
 resolver = "2"

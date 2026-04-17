@@ -1,0 +1,9 @@
+[package]
+name = "egui-elm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = { version = "0.34.1", default-features = false }
+egui   = { version = "0.34.1", default-features = false }
+tokio  = { version = "1.52.1", features = ["rt-multi-thread", "sync"] }
