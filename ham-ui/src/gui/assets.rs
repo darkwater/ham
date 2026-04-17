@@ -1,18 +1,16 @@
-use egui::{CursorIcon, Popup, PopupCloseBehavior, Sense};
+use egui::{CursorIcon, Sense};
 use egui_table::{HeaderCellInfo, HeaderRow, Table, TableDelegate};
 use ham_shared::{Asset, FieldId};
+use serde::{Deserialize, Serialize};
 
 use crate::gui::{ElmCtx, GlobalState, HamPage, Message};
 
-// use super::{Page, next_page_id};
-
 pub struct AssetTable<'a> {
     pub global: &'a GlobalState,
-    pub columns: Vec<AssetColumn>,
     pub elm: &'a mut ElmCtx<Message>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum AssetColumn {
     Tag,
     Category,
@@ -81,10 +79,14 @@ impl AssetColumn {
 }
 
 impl<'a> AssetTable<'a> {
+    pub fn columns(&self) -> &[AssetColumn] {
+        &self.global.settings.asset_columns
+    }
+
     pub fn show(&mut self, ui: &mut egui::Ui) {
         Table::new()
             .columns(
-                self.columns
+                self.columns()
                     .iter()
                     .map(|col| {
                         egui_table::Column::new(col.width())
@@ -111,41 +113,16 @@ impl TableDelegate for AssetTable<'_> {
 
         ui.set_clip_rect(rect);
 
-        let res = egui::Frame::new()
+        egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 4))
             .show(ui, |ui| {
                 ui.centered_and_justified(|ui| {
-                    let Some(column) = &self.columns.get(cell.col_range.start) else {
+                    let Some(column) = &self.columns().get(cell.col_range.start) else {
                         return;
                     };
 
                     ui.label(column.header(self.global));
                 });
-            })
-            .response
-            .interact(Sense::click());
-
-        Popup::context_menu(&res)
-            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-            .show(|ui| {
-                ui.add_enabled_ui(false, |ui| {
-                    ui.checkbox(&mut true, "Tag");
-                    ui.checkbox(&mut true, "Category");
-                    ui.checkbox(&mut true, "Display Name");
-                });
-
-                for field in &self.global.fields {
-                    let mut visible = self.columns.contains(&AssetColumn::Field(field.id));
-
-                    if ui.checkbox(&mut visible, &field.display_name).changed() {
-                        if visible {
-                            self.columns.push(AssetColumn::Field(field.id));
-                        } else {
-                            self.columns
-                                .retain(|col| *col != AssetColumn::Field(field.id));
-                        }
-                    }
-                }
             });
     }
 
@@ -154,7 +131,7 @@ impl TableDelegate for AssetTable<'_> {
             return;
         };
 
-        let Some(column) = self.columns.get(cell.col_nr) else {
+        let Some(column) = self.columns().get(cell.col_nr) else {
             return;
         };
 
@@ -173,21 +150,10 @@ impl TableDelegate for AssetTable<'_> {
             .interact(Sense::click())
             .on_hover_cursor(CursorIcon::PointingHand);
 
-        res.context_menu(|ui| {
-            if let Some(asset) = self.global.assets.get(row_nr as usize) {
-                let asset_id = asset.id;
-                ui.menu_button("Delete", |ui| {
-                    if ui.button("Confirm").clicked() {
-                        self.elm.send(Message::DeleteAsset(asset_id));
-                    }
-                });
-            }
-        });
-
         if res.clicked() {
             if let Some(asset) = self.global.assets.get(row_nr as usize) {
                 self.elm
-                    .send(Message::ChangePage(HamPage::EditAsset(asset.id)));
+                    .send(Message::ChangePage(HamPage::EditAsset(Some(asset.id))));
             }
         } else if res.hovered() {
             if res.is_pointer_button_down_on() {

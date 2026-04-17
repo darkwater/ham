@@ -12,6 +12,7 @@ CREATE TABLE assets (
     category_id  INTEGER NOT NULL REFERENCES categories(id),
     display_name TEXT NOT NULL,
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at   TEXT
 );
 

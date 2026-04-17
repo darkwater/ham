@@ -163,6 +163,12 @@ pub struct CreateCategoryParams {
     pub field_ids: Vec<FieldId>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFieldParams {
+    pub display_name: String,
+    pub value_type: FieldType,
+}
+
 macro_rules! newtypes {
     ($($ty:ident),*) => {
         $(
