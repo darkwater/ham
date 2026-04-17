@@ -1,4 +1,6 @@
 mod assets;
+mod categories;
+mod index;
 
 use egui::{Align, Frame, Layout, Margin, Vec2};
 use egui_elm::{App, ElmCtx, Fragment, Task};
@@ -8,7 +10,7 @@ use ham_shared::{
 use serde::{Deserialize, Serialize};
 
 use self::assets::AssetColumn;
-use crate::gui::assets::AssetTable;
+use crate::gui::{assets::AssetTable, categories::CategoriesPage, index::Index};
 
 pub fn main() -> eframe::Result<()> {
     egui_elm::run_app::<HamApp>("ham", Default::default())
@@ -25,8 +27,11 @@ struct GlobalState {
     assets: Vec<Asset>,
     categories: Vec<Category>,
     fields: Vec<Field>,
+    index: Index,
 
     settings: Settings,
+
+    categories_selection: Option<CategoryId>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,6 +74,8 @@ enum Message {
     ChangePage(HamPage),
 
     ToggleFetchAssetField(FieldId, bool),
+
+    SelectCategory(ham_shared::CategoryId),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -129,14 +136,17 @@ impl Fragment for HamApp {
         match message {
             Message::AssetsLoaded(result) => {
                 self.global.assets = self.handle_surf_err(result);
+                self.global.index = Index::calculate(&self.global);
                 Task::none()
             }
             Message::CategoriesLoaded(result) => {
                 self.global.categories = self.handle_surf_err(result);
+                self.global.index = Index::calculate(&self.global);
                 Task::none()
             }
             Message::FieldsLoaded(result) => {
                 self.global.fields = self.handle_surf_err(result);
+                self.global.index = Index::calculate(&self.global);
                 Task::none()
             }
 
@@ -168,6 +178,11 @@ impl Fragment for HamApp {
                 self.global.settings.asset_columns.sort_unstable();
 
                 self.load_assets()
+            }
+
+            Message::SelectCategory(category_id) => {
+                self.global.categories_selection = Some(category_id);
+                Task::none()
             }
         }
     }
@@ -202,26 +217,16 @@ impl Fragment for HamApp {
                 });
             });
 
-        egui::Panel::right("right_panel").show_inside(ui, |ui| {
-            for field in &self.global.fields {
-                let mut checked = self
-                    .global
-                    .settings
-                    .asset_columns
-                    .contains(&AssetColumn::Field(field.id));
-
-                let res = ui.checkbox(&mut checked, &field.display_name);
-                if res.changed() {
-                    elm.send(Message::ToggleFetchAssetField(field.id, checked));
-                }
-            }
-        });
-
         egui::CentralPanel::default()
-            .frame(Frame::central_panel(ui.style()).inner_margin(Margin::ZERO))
+            .frame(match self.page {
+                HamPage::Assets => Frame::central_panel(ui.style()).inner_margin(Margin::ZERO),
+                _ => Frame::central_panel(ui.style()),
+            })
             .show_inside(ui, |ui| match self.page {
                 HamPage::Assets => AssetTable { global: &self.global, elm: &mut elm }.show(ui),
-                HamPage::Categories => todo!(),
+                HamPage::Categories => {
+                    CategoriesPage { global: &self.global, elm: &mut elm }.show(ui)
+                }
                 HamPage::Fields => todo!(),
                 HamPage::EditAsset(asset_id) => todo!(),
             });

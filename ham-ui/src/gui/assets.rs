@@ -84,6 +84,22 @@ impl<'a> AssetTable<'a> {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("right_panel").show_inside(ui, |ui| {
+            for field in &self.global.fields {
+                let mut checked = self
+                    .global
+                    .settings
+                    .asset_columns
+                    .contains(&AssetColumn::Field(field.id));
+
+                let res = ui.checkbox(&mut checked, &field.display_name);
+                if res.changed() {
+                    self.elm
+                        .send(Message::ToggleFetchAssetField(field.id, checked));
+                }
+            }
+        });
+
         Table::new()
             .columns(
                 self.columns()
