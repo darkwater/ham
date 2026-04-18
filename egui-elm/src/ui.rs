@@ -1,5 +1,8 @@
 // use std::ops::{Deref, DerefMut};
 
+use std::sync::Arc;
+
+use egui::mutex::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub struct ElmCtx<M> {
@@ -60,8 +63,23 @@ impl<M> ElmCtx<M> {
     // }
 }
 
-// pub trait EguiUiExt<M> {
-//     fn send(&self, message: M);
-// }
+pub trait EguiUiExt {
+    fn hold_value<T>(&self, id: impl Into<egui::Id>, default: &T) -> Arc<Mutex<T::Owned>>
+    where
+        T: ?Sized + ToOwned,
+        T::Owned: Send + 'static;
+}
 
-// impl<M> EguiUiExt<M> {}
+impl EguiUiExt for egui::Ui {
+    fn hold_value<T>(&self, id: impl Into<egui::Id>, default: &T) -> Arc<Mutex<T::Owned>>
+    where
+        T: ?Sized + ToOwned,
+        T::Owned: Send + 'static,
+    {
+        self.memory_mut(|mem| {
+            mem.data
+                .get_temp_mut_or_insert_with(id.into(), || Arc::new(Mutex::new(default.to_owned())))
+                .clone()
+        })
+    }
+}

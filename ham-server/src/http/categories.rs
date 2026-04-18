@@ -1,4 +1,8 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use ham_shared::{Category, CategoryId, CreateCategoryParams};
 
 pub async fn list_categories(
@@ -77,4 +81,39 @@ pub async fn create_category(
         parent_id,
         field_ids,
     }))
+}
+
+pub async fn delete_category(
+    State(pool): State<sqlx::SqlitePool>,
+    Path(category_id): Path<CategoryId>,
+) -> Result<StatusCode, StatusCode> {
+    // check if there are any assets in this category
+    let has_assets = sqlx::query!("SELECT 1 as a FROM assets WHERE category_id = ?", category_id.0)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .is_some();
+
+    if has_assets {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // check if there are any subcategories
+    let has_subcategories =
+        sqlx::query!("SELECT 1 as a FROM categories WHERE parent_category_id = ?", category_id.0)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .is_some();
+
+    if has_subcategories {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    sqlx::query!("DELETE FROM categories WHERE id = ?", category_id.0)
+        .execute(&pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

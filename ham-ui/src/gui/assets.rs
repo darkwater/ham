@@ -100,20 +100,22 @@ impl<'a> AssetTable<'a> {
             }
         });
 
-        Table::new()
-            .columns(
-                self.columns()
-                    .iter()
-                    .map(|col| {
-                        egui_table::Column::new(col.width())
-                            .id(egui::Id::new(col))
-                            .resizable(false)
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .headers([HeaderRow { height: 24.0, groups: vec![] }])
-            .num_rows(self.global.assets.len() as u64)
-            .show(ui, self);
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            Table::new()
+                .columns(
+                    self.columns()
+                        .iter()
+                        .map(|col| {
+                            egui_table::Column::new(col.width())
+                                .id(egui::Id::new(col))
+                                .resizable(false)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .headers([HeaderRow { height: 24.0, groups: vec![] }])
+                .num_rows(self.global.assets.len() as u64)
+                .show(ui, self);
+        });
     }
 }
 

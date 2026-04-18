@@ -5,7 +5,8 @@ mod index;
 use egui::{Align, Frame, Layout, Margin, Vec2};
 use egui_elm::{App, ElmCtx, Fragment, Task};
 use ham_shared::{
-    Asset, AssetId, Category, CategoryId, CommaSeparated, Field, FieldId, ListAssetParams,
+    Asset, AssetId, Category, CategoryId, CommaSeparated, CreateCategoryParams, Field, FieldId,
+    ListAssetParams,
 };
 use serde::{Deserialize, Serialize};
 
@@ -70,12 +71,16 @@ enum Message {
     AssetsLoaded(surf::Result<Vec<Asset>>),
     CategoriesLoaded(surf::Result<Vec<Category>>),
     FieldsLoaded(surf::Result<Vec<Field>>),
+    CategoryCreated(surf::Result<Category>),
+    CategoryDeleted(CategoryId, surf::Result<()>),
 
     ChangePage(HamPage),
 
     ToggleFetchAssetField(FieldId, bool),
 
-    SelectCategory(ham_shared::CategoryId),
+    SelectCategory(CategoryId),
+    CreateCategory(CreateCategoryParams),
+    DeleteCategory(CategoryId),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +154,18 @@ impl Fragment for HamApp {
                 self.global.index = Index::calculate(&self.global);
                 Task::none()
             }
+            Message::CategoryCreated(result) => {
+                let category = self.handle_surf_err(result);
+                self.global.categories.push(category);
+                self.global.index = Index::calculate(&self.global);
+                Task::none()
+            }
+            Message::CategoryDeleted(category_id, result) => {
+                let () = self.handle_surf_err(result);
+                self.global.categories.retain(|c| c.id != category_id);
+                self.global.index = Index::calculate(&self.global);
+                Task::none()
+            }
 
             Message::ChangePage(page) => {
                 self.page = page;
@@ -184,6 +201,9 @@ impl Fragment for HamApp {
                 self.global.categories_selection = Some(category_id);
                 Task::none()
             }
+
+            Message::CreateCategory(params) => self.create_category(params),
+            Message::DeleteCategory(category_id) => self.delete_category(category_id),
         }
     }
 
@@ -217,19 +237,12 @@ impl Fragment for HamApp {
                 });
             });
 
-        egui::CentralPanel::default()
-            .frame(match self.page {
-                HamPage::Assets => Frame::central_panel(ui.style()).inner_margin(Margin::ZERO),
-                _ => Frame::central_panel(ui.style()),
-            })
-            .show_inside(ui, |ui| match self.page {
-                HamPage::Assets => AssetTable { global: &self.global, elm: &mut elm }.show(ui),
-                HamPage::Categories => {
-                    CategoriesPage { global: &self.global, elm: &mut elm }.show(ui)
-                }
-                HamPage::Fields => todo!(),
-                HamPage::EditAsset(asset_id) => todo!(),
-            });
+        match self.page {
+            HamPage::Assets => AssetTable { global: &self.global, elm: &mut elm }.show(ui),
+            HamPage::Categories => CategoriesPage { global: &self.global, elm: &mut elm }.show(ui),
+            HamPage::Fields => todo!(),
+            HamPage::EditAsset(asset_id) => todo!(),
+        }
     }
 }
 
@@ -246,6 +259,19 @@ impl HamApp {
 
     fn get(&self, path: &str) -> surf::RequestBuilder {
         surf::get(self.url(path))
+    }
+
+    fn post(&self, path: &str) -> surf::RequestBuilder {
+        surf::post(self.url(path))
+    }
+
+    fn handle_surf_err<T>(&self, result: surf::Result<T>) -> T {
+        match result {
+            Ok(value) => value,
+            Err(e) => {
+                todo!("Handle surf error: {e}");
+            }
+        }
     }
 
     fn load_assets(&self) -> Task<Message> {
@@ -282,12 +308,20 @@ impl HamApp {
         Task::perform(self.get("fields").recv_json::<Vec<Field>>(), Message::FieldsLoaded)
     }
 
-    fn handle_surf_err<T>(&self, result: surf::Result<T>) -> T {
-        match result {
-            Ok(value) => value,
-            Err(e) => {
-                todo!("Handle surf error: {e}");
-            }
-        }
+    fn create_category(&self, params: CreateCategoryParams) -> Task<Message> {
+        Task::perform(
+            self.post("categories")
+                .body_json(&params)
+                .unwrap()
+                .recv_json::<Category>(),
+            Message::CategoryCreated,
+        )
+    }
+
+    fn delete_category(&self, category_id: CategoryId) -> Task<Message> {
+        Task::perform(
+            surf::delete(self.url(&format!("categories/{}", category_id.0))).recv_bytes(),
+            move |res| Message::CategoryDeleted(category_id, res.map(|_empty| ())),
+        )
     }
 }
