@@ -1,32 +1,34 @@
-use egui::{CursorIcon, Sense};
+use core::iter;
+
+use egui::{CursorIcon, Frame, Margin, Sense, TextWrapMode};
 use egui_table::{HeaderCellInfo, HeaderRow, Table, TableDelegate};
 use ham_shared::{Asset, FieldId};
 use serde::{Deserialize, Serialize};
 
 use crate::gui::{ElmCtx, GlobalState, HamPage, Message};
 
-pub struct AssetTable<'a> {
+pub struct AssetsList<'a> {
     pub global: &'a GlobalState,
-    pub elm: &'a mut ElmCtx<Message>,
+    pub elm: ElmCtx<'a, Message>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum AssetColumn {
     Tag,
-    Category,
     DisplayName,
+    Category,
     Field(FieldId),
 }
 
 impl AssetColumn {
     pub const BASE: &[AssetColumn] =
-        &[AssetColumn::Tag, AssetColumn::Category, AssetColumn::DisplayName];
+        &[AssetColumn::Tag, AssetColumn::DisplayName, AssetColumn::Category];
 
     pub fn width(&self) -> f32 {
         match self {
             AssetColumn::Tag => 80.0,
-            AssetColumn::Category => 100.0,
             AssetColumn::DisplayName => 200.0,
+            AssetColumn::Category => 100.0,
             AssetColumn::Field(_) => 150.0,
         }
     }
@@ -34,8 +36,8 @@ impl AssetColumn {
     fn header(&self, global: &GlobalState) -> String {
         match self {
             AssetColumn::Tag => "Tag".to_string(),
-            AssetColumn::Category => "Category".to_string(),
             AssetColumn::DisplayName => "Display Name".to_string(),
+            AssetColumn::Category => "Category".to_string(),
             AssetColumn::Field(field_id) => {
                 if let Some(field) = global.field(*field_id) {
                     field.display_name.clone()
@@ -56,6 +58,9 @@ impl AssetColumn {
             AssetColumn::Tag => {
                 ui.label(global.format_asset_tag(asset.id));
             }
+            AssetColumn::DisplayName => {
+                ui.label(&asset.display_name);
+            }
             AssetColumn::Category => {
                 ui.label(
                     global
@@ -63,9 +68,6 @@ impl AssetColumn {
                         .map(|c| c.display_name.clone())
                         .unwrap_or("-".to_string()),
                 );
-            }
-            AssetColumn::DisplayName => {
-                ui.label(&asset.display_name);
             }
             AssetColumn::Field(field_id) => {
                 if let Some(field) = asset.fields.iter().find(|f| f.field_id == *field_id) {
@@ -78,7 +80,7 @@ impl AssetColumn {
     }
 }
 
-impl<'a> AssetTable<'a> {
+impl<'a> AssetsList<'a> {
     pub fn columns(&self) -> &[AssetColumn] {
         &self.global.settings.asset_columns
     }
@@ -98,39 +100,35 @@ impl<'a> AssetTable<'a> {
                         .send(Message::ToggleFetchAssetField(field.id, checked));
                 }
             }
+
+            ui.take_available_space();
         });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            Table::new()
-                .columns(
-                    self.columns()
-                        .iter()
-                        .map(|col| {
-                            egui_table::Column::new(col.width())
-                                .id(egui::Id::new(col))
-                                .resizable(false)
-                        })
-                        .collect::<Vec<_>>(),
-                )
-                .headers([HeaderRow { height: 24.0, groups: vec![] }])
-                .num_rows(self.global.assets.len() as u64)
-                .show(ui, self);
-        });
+        egui::CentralPanel::default()
+            .frame(Frame::central_panel(ui.style()).inner_margin(Margin::ZERO))
+            .show_inside(ui, |ui| {
+                Table::new()
+                    .columns(
+                        self.columns()
+                            .iter()
+                            .map(|col| egui_table::Column::new(col.width()).id(egui::Id::new(col)))
+                            .chain(iter::once(
+                                egui_table::Column::new(150.)
+                                    .id("padding".into())
+                                    .resizable(false),
+                            ))
+                            .collect::<Vec<_>>(),
+                    )
+                    .headers([HeaderRow { height: 24.0, groups: vec![] }])
+                    .num_rows(self.global.assets.len() as u64)
+                    .show(ui, self);
+            });
     }
 }
 
-impl TableDelegate for AssetTable<'_> {
+impl TableDelegate for AssetsList<'_> {
     fn header_cell_ui(&mut self, ui: &mut egui::Ui, cell: &HeaderCellInfo) {
-        let rect = ui.clip_rect();
-        ui.set_clip_rect(rect.expand(2.));
-
-        ui.painter().line_segment(
-            [rect.right_top(), rect.right_bottom()],
-            ui.visuals().widgets.noninteractive.bg_stroke,
-        );
-
-        ui.set_clip_rect(rect);
-
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Truncate);
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 4))
             .show(ui, |ui| {
@@ -153,6 +151,7 @@ impl TableDelegate for AssetTable<'_> {
             return;
         };
 
+        ui.style_mut().wrap_mode = Some(TextWrapMode::Truncate);
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
             column.frame().show(ui, |ui| {
                 column.contents(ui, self.global, asset);

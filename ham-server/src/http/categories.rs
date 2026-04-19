@@ -38,11 +38,9 @@ pub async fn list_categories(
 
 pub async fn create_category(
     State(pool): State<sqlx::SqlitePool>,
-    Json(params): Json<CreateCategoryParams>,
+    Json(CreateCategoryParams { display_name, parent_id, field_ids }): Json<CreateCategoryParams>,
 ) -> Result<Json<Category>, StatusCode> {
-    let CreateCategoryParams { display_name, parent_id, field_ids } = params;
-
-    if let Some(CategoryId(parent_id)) = parent_id {
+    if let Some(parent_id) = parent_id {
         let parent_exists = sqlx::query!("SELECT id FROM categories WHERE id = ?", parent_id)
             .fetch_optional(&pool)
             .await
@@ -57,7 +55,7 @@ pub async fn create_category(
     let category_id = sqlx::query!(
         "INSERT INTO categories (display_name, parent_category_id) VALUES (?, ?)",
         display_name,
-        parent_id.map(|id| id.0),
+        parent_id,
     )
     .execute(&pool)
     .await
@@ -68,7 +66,7 @@ pub async fn create_category(
         sqlx::query!(
             "INSERT INTO category_field_hints (category_id, field_id) VALUES (?, ?)",
             category_id,
-            field_id.0,
+            field_id,
         )
         .execute(&pool)
         .await
@@ -110,7 +108,7 @@ pub async fn delete_category(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    sqlx::query!("DELETE FROM categories WHERE id = ?", category_id.0)
+    sqlx::query!("DELETE FROM categories WHERE id = ?", category_id)
         .execute(&pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

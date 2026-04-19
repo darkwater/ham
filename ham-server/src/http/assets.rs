@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_extra::extract::Query;
 use ham_shared::{
-    Asset, AssetField, AssetId, CategoryId, CreateAssetParams, FieldId, ListAssetParams,
+    Asset, AssetField, AssetId, CategoryId, CreateAssetParams, FieldId, FieldValue, ListAssetParams,
 };
 use sqlx::{AssertSqlSafe, Row as _};
 
@@ -61,7 +61,7 @@ pub async fn list_assets(
                 return None;
             };
 
-            ron::from_str(&v)
+            serde_json::from_str(&v)
                 .inspect_err(|e| {
                     tracing::error!("Failed to parse {field_id:?} value for {asset_id:?}: {e}");
                 })
@@ -85,11 +85,9 @@ pub async fn list_assets(
 
 pub async fn create_asset(
     State(pool): State<sqlx::SqlitePool>,
-    Json(params): Json<CreateAssetParams>,
+    Json(CreateAssetParams { category_id, display_name }): Json<CreateAssetParams>,
 ) -> Result<Json<Asset>, StatusCode> {
-    let CreateAssetParams { category_id, display_name } = params;
-
-    let category = sqlx::query!("SELECT id FROM categories WHERE id = ?", params.category_id.0)
+    let category = sqlx::query!("SELECT id FROM categories WHERE id = ?", category_id.0)
         .fetch_optional(&pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -118,7 +116,7 @@ pub async fn create_asset(
 
 pub async fn get_asset(
     State(pool): State<sqlx::SqlitePool>,
-    Path(id): Path<i64>,
+    Path(id): Path<AssetId>,
 ) -> Result<Json<Asset>, StatusCode> {
     let asset = sqlx::query!("SELECT id, category_id, display_name FROM assets WHERE id = ?", id)
         .map(|row| Asset {
@@ -136,19 +134,18 @@ pub async fn get_asset(
     };
 
     let fields = sqlx::query!(
-        "SELECT field_id, value FROM asset_field_values WHERE asset_id = ?",
+        "SELECT
+            field_id,
+            value AS 'value: sqlx::types::Json<FieldValue>'
+        FROM
+            asset_field_values
+        WHERE
+            asset_id = ?",
         asset.id.0,
     )
-    .try_map(|row| {
-        let field_id = FieldId(row.field_id);
-
-        let value = ron::from_str(&row.value)
-            .inspect_err(|e| {
-                tracing::error!("Failed to parse {field_id:?} value for {:?}: {e}", asset.id);
-            })
-            .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-
-        Ok(AssetField { field_id, value })
+    .map(|row| AssetField {
+        field_id: FieldId(row.field_id),
+        value: row.value.0,
     })
     .fetch_all(&pool)
     .await
@@ -156,4 +153,26 @@ pub async fn get_asset(
 
     asset.fields = fields;
     Ok(Json(asset))
+}
+
+pub async fn update_asset(
+    State(pool): State<sqlx::SqlitePool>,
+    Path(id): Path<AssetId>,
+    Json(CreateAssetParams { category_id, display_name }): Json<CreateAssetParams>,
+) -> Result<Json<Asset>, StatusCode> {
+    let result = sqlx::query!(
+        "UPDATE assets SET category_id = ?, display_name = ? WHERE id = ?",
+        category_id.0,
+        display_name,
+        id.0,
+    )
+    .execute(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    get_asset(State(pool), Path(id)).await
 }

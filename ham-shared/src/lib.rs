@@ -189,6 +189,36 @@ macro_rules! newtypes {
                     self.0.fmt(f)
                 }
             }
+
+            #[cfg(feature = "sqlx")]
+            impl sqlx::Type<sqlx::Sqlite> for $ty {
+                fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
+                    <i64 as sqlx::Type<sqlx::Sqlite>>::type_info()
+                }
+                fn compatible(ty: &sqlx::sqlite::SqliteTypeInfo) -> bool {
+                    <i64 as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
+                }
+            }
+
+            #[cfg(feature = "sqlx")]
+            impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for $ty {
+                fn decode(
+                    value: sqlx::sqlite::SqliteValueRef<'r>
+                ) -> Result<Self, sqlx::error::BoxDynError> {
+                    <i64 as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value).map(Self)
+                }
+            }
+
+            #[cfg(feature = "sqlx")]
+            impl<'q> sqlx::Encode<'q, sqlx::Sqlite> for $ty {
+                fn encode_by_ref(
+                    &self,
+                    buf: &mut <sqlx::Sqlite as sqlx::Database>::ArgumentBuffer,
+                ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>>
+                {
+                    <i64 as sqlx::Encode<'q, sqlx::Sqlite>>::encode_by_ref(&self.0, buf)
+                }
+            }
         )*
     };
 }

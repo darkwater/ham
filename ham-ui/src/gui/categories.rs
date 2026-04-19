@@ -6,13 +6,13 @@ use crate::gui::{GlobalState, Message};
 
 pub struct CategoriesPage<'a> {
     pub global: &'a GlobalState,
-    pub elm: &'a mut ElmCtx<Message>,
+    pub elm: ElmCtx<'a, Message>,
 }
 
 impl<'a> CategoriesPage<'a> {
     pub fn show(self, ui: &mut egui::Ui) {
         if let Some(category_id) = self.global.categories_selection {
-            egui::Panel::right("foo")
+            egui::Panel::right("details")
                 .exact_size(ui.available_width() / 2.)
                 .frame(egui::Frame::central_panel(ui.style()))
                 .show_inside(ui, |ui| {
@@ -27,7 +27,7 @@ impl<'a> CategoriesPage<'a> {
                     ui.add_space(12.);
                     ui.heading("Create subcategory");
 
-                    let name = ui.hold_value("new category name", "foo");
+                    let name = ui.hold_value("new category name", "");
                     {
                         let mut name = name.lock();
                         let res = ui.text_edit_singleline(&mut *name);
@@ -86,7 +86,7 @@ impl<'a> CategoriesPage<'a> {
                 ui.horizontal(|ui| {
                     for (i, cat) in ancestry.iter().enumerate() {
                         if i > 0 {
-                            ui.label(">");
+                            ui.label("/");
                         }
 
                         let selected = self.global.categories_selection == Some(cat.id);
@@ -113,9 +113,9 @@ impl<'a> CategoriesPage<'a> {
     }
 }
 
-struct CategoryAncestryIter<'a> {
-    global: &'a GlobalState,
-    current: Option<&'a Category>,
+pub struct CategoryAncestryIter<'a> {
+    pub global: &'a GlobalState,
+    pub current: Option<&'a Category>,
 }
 
 impl<'a> Iterator for CategoryAncestryIter<'a> {
@@ -133,17 +133,17 @@ impl<'a> Iterator for CategoryAncestryIter<'a> {
 }
 
 impl<'a> CategoryAncestryIter<'a> {
-    fn into_vec(self) -> Vec<&'a Category> {
+    pub fn into_vec(self) -> Vec<&'a Category> {
         let mut ancestry = self.collect::<Vec<_>>();
         ancestry.reverse();
         ancestry
     }
 
-    fn display(self) -> String {
+    pub fn display(self) -> String {
         self.into_vec()
             .iter()
             .map(|c| c.display_name.as_str())
             .collect::<Vec<_>>()
-            .join(" > ")
+            .join(" / ")
     }
 }

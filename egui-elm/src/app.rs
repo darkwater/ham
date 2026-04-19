@@ -46,15 +46,11 @@ struct Runtime<A: App> {
 impl<A: App> Runtime<A> {
     fn new(cc: &eframe::CreationContext) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let (app, task) = A::init(cc);
-
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
+        let egui_ctx = cc.egui_ctx.clone();
         let runtime = tokio::runtime::Runtime::new()?;
 
-        let egui_ctx = cc.egui_ctx.clone();
-
         let this = Self { app, tx, rx, egui_ctx, runtime };
-
         this.spawn_task(task);
 
         Ok(this)
@@ -83,11 +79,7 @@ impl<A: App> eframe::App for Runtime<A> {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        let elm = ElmCtx {
-            // egui: ui,
-            // frame,
-            queue: self.tx.clone(),
-        };
+        let elm = ElmCtx { queue: &self.tx };
 
         self.app.view(ui, frame, elm);
     }

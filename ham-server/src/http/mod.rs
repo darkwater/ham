@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
 };
 
 mod assets;
@@ -12,6 +12,7 @@ pub async fn run(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         .route("/assets", get(crate::http::assets::list_assets))
         .route("/assets", post(crate::http::assets::create_asset))
         .route("/assets/{id}", get(crate::http::assets::get_asset))
+        .route("/assets/{id}", patch(crate::http::assets::update_asset))
         .route("/categories", get(crate::http::categories::list_categories))
         .route("/categories", post(crate::http::categories::create_category))
         .route("/categories/{id}", delete(crate::http::categories::delete_category))

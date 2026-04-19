@@ -1,67 +1,43 @@
-// use std::ops::{Deref, DerefMut};
-
-use std::sync::Arc;
+use std::{clone::Clone, sync::Arc};
 
 use egui::mutex::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
-pub struct ElmCtx<M> {
-    pub(crate) queue: UnboundedSender<M>,
+#[derive(Debug, Clone, Copy)]
+pub struct ElmCtx<'a, M> {
+    pub(crate) queue: &'a UnboundedSender<M>,
 }
 
-// impl<'a, M> Deref for ElmCtx<'a, M> {
-//     type Target = egui::Ui;
-
-//     fn deref(&self) -> &Self::Target {
-//         self.egui
-//     }
-// }
-
-// impl<'a, M> DerefMut for ElmCtx<'a, M> {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         self.egui
-//     }
-// }
-
-impl<M> ElmCtx<M> {
-    // pub fn egui(&mut self) -> &mut egui::Ui {
-    //     self.egui
-    // }
-
-    // pub fn frame(&mut self) -> &mut eframe::Frame {
-    //     self.frame
-    // }
-
-    pub fn send(&mut self, message: M) {
+impl<M> ElmCtx<'_, M> {
+    pub fn send(&self, message: M) {
         self.queue.send(message).expect("Message queue was closed");
     }
-}
 
-impl<M> ElmCtx<M> {
-    // pub fn map_ui<'ui: 'a, T>(
-    //     &mut self,
-    //     map: impl FnOnce(
-    //         &'ui mut egui::Ui,
-    //         Box<dyn FnOnce(&'ui mut egui::Ui) -> T>,
-    //     ) -> egui::InnerResponse<T>
-    //     + 'static,
-    //     inner: impl FnOnce(ElmUi<'ui, M>) -> T + 'static,
-    // ) -> egui::InnerResponse<T> {
-    //     let Self { egui, frame, queue } = self;
+    // /// return true if you changed the value
+    // pub fn hold_value<T: ToOwned>(
+    //     &self,
+    //     id: impl Into<egui::Id>,
+    //     default: &T,
+    //     scope: impl FnOnce(HoldValue<T>) -> bool,
+    // ) {
+    //     let id = id.into();
+    //     let value = self
+    //         .hold_values
+    //         .get(&id)
+    //         .and_then(|boxed| boxed.downcast_ref::<Arc<Mutex<T::Owned>>>())
+    //         .cloned()
+    //         .unwrap_or_else(|| Arc::new(Mutex::new(default.to_owned())));
 
-    //     map(
-    //         egui,
-    //         Box::new(|ui| {
-    //             let mut inner_ui = Self {
-    //                 egui: ui,
-    //                 frame,
-    //                 queue: queue.clone(),
-    //             };
-    //             inner(inner_ui)
-    //         }),
-    //     )
+    //     let hold_value = HoldValue { value: Cow::Borrowed(&*value.lock()) };
+    //     if scope(hold_value) {
+    //         *value.lock() = hold_value.value.into_owned();
+    //     }
     // }
 }
+
+// pub struct HoldValue<'a, T: Clone> {
+//     value: Cow<'a, T>,
+// }
 
 pub trait EguiUiExt {
     fn hold_value<T>(&self, id: impl Into<egui::Id>, default: &T) -> Arc<Mutex<T::Owned>>

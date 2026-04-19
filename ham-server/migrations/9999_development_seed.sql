@@ -25,13 +25,13 @@ INSERT INTO assets (id, category_id, display_name) VALUES
     (15, 8, 'AEG L7WB86GW');
 
 INSERT INTO field_definitions (id, display_name, value_type) VALUES
-    (1, 'Serial', 'String'),
-    (2, 'Purchase Date', 'DateTime(Day)'),
-    (3, 'Purchase Price', 'Money'),
-    (4, 'Location', 'Enum(1)'),
-    (5, 'RAM GB', 'Float'),
-    (6, 'Resolution', 'String'),
-    (7, 'Refresh Rate', 'Int');
+    (1, 'Serial', '"String"'),
+    (2, 'Purchase Date', '{"DateTime":"Day"}'),
+    (3, 'Purchase Price', '"Money"'),
+    (4, 'Location', '{"Enum":1}'),
+    (5, 'RAM GB', '"Float"'),
+    (6, 'Resolution', '"String"'),
+    (7, 'Refresh Rate', '"Int"');
 
 INSERT INTO enum_types (type_key, display_name) VALUES
     ('location', 'Location');
@@ -51,12 +51,12 @@ INSERT INTO category_field_hints (category_id, field_id) VALUES
     (6, 7);
 
 INSERT INTO asset_field_values (asset_id, field_id, value) VALUES
-    (1, 1, 'String("1234567890")'),
-    (1, 2, 'DateTime(date: "2023-01-01T00:00:00Z", precision: Day)'),
-    (1, 3, 'Money(amount: "399.99", currency: "EUR")'),
-    (1, 4, 'Enum(enum_id: 1, value: 1)'),
-    (1, 5, 'Int(32)'),
-    (10, 6, 'String("3840x2160")'),
-    (10, 7, 'Int(240)');
+    (1,  1, '{"String":"1234567890"}'),
+    (1,  2, '{"DateTime":{"date":"2023-01-01T00:00:00Z","precision":"Day"}}'),
+    (1,  3, '{"Money":{"amount":"399.99","currency": "EUR"}}'),
+    (1,  4, '{"Enum":{"enum_id":1,"value":1}}'),
+    (1,  5, '{"Int":32}'),
+    (10, 6, '{"String":"3840x2160"}'),
+    (10, 7, '{"Int":240}');
 
 UPDATE settings SET value = 'FBK' WHERE name = 'asset_tag_prefix';

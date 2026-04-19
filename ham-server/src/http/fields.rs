@@ -1,5 +1,5 @@
 use axum::{Json, extract::State, http::StatusCode};
-use ham_shared::{Field, FieldId};
+use ham_shared::{CreateFieldParams, Field, FieldId};
 
 pub async fn list_fields(
     State(pool): State<sqlx::SqlitePool>,
@@ -8,7 +8,7 @@ pub async fn list_fields(
         .try_map(|row| {
             let id = FieldId(row.id);
 
-            let value_type = ron::from_str(&row.value_type)
+            let value_type = serde_json::from_str(&row.value_type)
                 .inspect_err(|e| {
                     tracing::error!("Failed to parse value_type for {id:?}: {e}");
                 })
@@ -29,11 +29,9 @@ pub async fn list_fields(
 
 pub async fn create_field(
     State(pool): State<sqlx::SqlitePool>,
-    Json(params): Json<ham_shared::CreateFieldParams>,
+    Json(CreateFieldParams { display_name, value_type }): Json<CreateFieldParams>,
 ) -> Result<Json<Field>, StatusCode> {
-    let ham_shared::CreateFieldParams { display_name, value_type } = params;
-
-    let value_type_str = ron::to_string(&value_type)
+    let value_type_str = serde_json::to_string(&value_type)
         .inspect_err(|e| {
             tracing::error!("Failed to serialize value_type: {e}");
         })
