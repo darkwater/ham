@@ -104,21 +104,24 @@ impl<'a> AssetsList<'a> {
             ui.take_available_space();
         });
 
+        let mut columns = self
+            .columns()
+            .iter()
+            .map(|col| egui_table::Column::new(col.width()).id(egui::Id::new(col)))
+            .chain(iter::once(
+                egui_table::Column::new(150.)
+                    .id("padding".into())
+                    .resizable(false),
+            ))
+            .collect::<Vec<_>>();
+
+        egui_table::Column::auto_size(&mut columns, ui.available_width());
+
         egui::CentralPanel::default()
             .frame(Frame::central_panel(ui.style()).inner_margin(Margin::ZERO))
             .show_inside(ui, |ui| {
                 Table::new()
-                    .columns(
-                        self.columns()
-                            .iter()
-                            .map(|col| egui_table::Column::new(col.width()).id(egui::Id::new(col)))
-                            .chain(iter::once(
-                                egui_table::Column::new(150.)
-                                    .id("padding".into())
-                                    .resizable(false),
-                            ))
-                            .collect::<Vec<_>>(),
-                    )
+                    .columns(columns)
                     .headers([HeaderRow { height: 24.0, groups: vec![] }])
                     .num_rows(self.global.assets.len() as u64)
                     .show(ui, self);

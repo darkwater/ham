@@ -13,7 +13,7 @@ impl<'a> CategoriesPage<'a> {
     pub fn show(self, ui: &mut egui::Ui) {
         if let Some(category_id) = self.global.categories_selection {
             egui::Panel::right("details")
-                .exact_size(ui.available_width() / 2.)
+                .default_size(ui.available_width() / 2.)
                 .frame(egui::Frame::central_panel(ui.style()))
                 .show_inside(ui, |ui| {
                     ui.heading(

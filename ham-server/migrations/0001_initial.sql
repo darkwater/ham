@@ -1,7 +1,7 @@
 CREATE TABLE categories (
     id                 INTEGER PRIMARY KEY,
     display_name       TEXT NOT NULL,
-    created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     parent_category_id INTEGER REFERENCES categories(id)
 );
 -- we currently assume that id 1 is the root category
@@ -11,16 +11,16 @@ CREATE TABLE assets (
     id           INTEGER PRIMARY KEY,
     category_id  INTEGER NOT NULL REFERENCES categories(id),
     display_name TEXT NOT NULL,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at   TEXT
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at   DATETIME
 );
 
 CREATE TABLE enum_types (
     id           INTEGER PRIMARY KEY,
     type_key     TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE field_definitions (
@@ -28,7 +28,7 @@ CREATE TABLE field_definitions (
     -- name         TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     value_type   JSON NOT NULL,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE category_field_hints (
@@ -44,7 +44,7 @@ CREATE TABLE enum_values (
     -- name         TEXT NOT NULL,
     display_name TEXT NOT NULL,
     order_index  INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 
     -- UNIQUE (enum_type_id, name)
 );
@@ -55,7 +55,7 @@ CREATE TABLE event_types (
     display_name    TEXT NOT NULL,
     description     TEXT,
     current_version INTEGER NOT NULL DEFAULT 1,
-    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE event_type_mutations (
@@ -66,16 +66,17 @@ CREATE TABLE event_type_mutations (
     operation          TEXT NOT NULL,
     field_id           INTEGER NOT NULL REFERENCES field_definitions(id),
     input_key          TEXT,
-    created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE (event_type_id, event_type_version, mutation_index)
 );
 
+-- more of a cache; source of truth is asset_events
 CREATE TABLE asset_field_values (
     asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     field_id   INTEGER NOT NULL REFERENCES field_definitions(id),
     value      JSON NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (asset_id, field_id)
 );
@@ -83,20 +84,17 @@ CREATE TABLE asset_field_values (
 CREATE TABLE asset_events (
     id                 INTEGER PRIMARY KEY,
     asset_id           INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    idempotency_key    TEXT NOT NULL,
-    event_type_id      TEXT NOT NULL REFERENCES event_types(kd),
+    event_type_id      TEXT NOT NULL REFERENCES event_types(id),
     event_type_version INTEGER NOT NULL DEFAULT 1,
-    payload_json       TEXT NOT NULL,
-    created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (asset_id, idempotency_key)
+    data               JSON NOT NULL,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE settings (
     id         INTEGER PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE,
-    value      TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    value      JSON NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 INSERT INTO settings (name, value) VALUES ('next_asset_id', '1');
-INSERT INTO settings (name, value) VALUES ('asset_tag_prefix', 'A');
+INSERT INTO settings (name, value) VALUES ('asset_tag_prefix', '"A"');
